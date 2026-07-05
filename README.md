@@ -9,7 +9,7 @@ não é necessário criar usuários de aplicação nem informar senha.
 
 - Windows com usuário de rede que já tem acesso ao SQL Server
 - Python 3.10+
-- ODBC Driver 17 ou 18 for SQL Server (já instalado nesta máquina)
+- ODBC Driver 17 ou 18 for SQL Server
 
 ## Instalação
 
