@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "sqlserver-hml-python-venv": {
+      "command": "C:\\caminho\\mcp-sqlserver\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "mcp_sqlserver"],
+      "env": {
+        "MSSQL_SERVER": "SRVSQL01\\HML",
+        "MSSQL_DATABASE": "master",
+        "MSSQL_READONLY": "true",
+        "MSSQL_DRIVER": "ODBC Driver 17 for SQL Server",
+        "MSSQL_MAX_ROWS": "200"
+      }
+    }
+  }
+}

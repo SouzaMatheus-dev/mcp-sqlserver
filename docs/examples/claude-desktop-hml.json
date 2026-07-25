@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "sqlserver-hml": {
+      "command": "mcp-sqlserver",
+      "env": {
+        "MSSQL_SERVER": "SRVSQL01\\HML",
+        "MSSQL_DATABASE": "master",
+        "MSSQL_READONLY": "true",
+        "MSSQL_APPLICATION_INTENT_READONLY": "true",
+        "MSSQL_MAX_ROWS": "200"
+      }
+    }
+  }
+}

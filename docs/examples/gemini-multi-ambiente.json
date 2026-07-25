@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "sqlserver-dev": {
+      "command": "mcp-sqlserver",
+      "env": {
+        "MSSQL_SERVER": "SRVSQL01\\DEV",
+        "MSSQL_DATABASE": "master",
+        "MSSQL_READONLY": "true",
+        "MSSQL_APPLICATION_INTENT_READONLY": "true",
+        "MSSQL_MAX_ROWS": "200"
+      }
+    },
+    "sqlserver-hml": {
+      "command": "mcp-sqlserver",
+      "env": {
+        "MSSQL_SERVER": "SRVSQL01\\HML",
+        "MSSQL_DATABASE": "master",
+        "MSSQL_READONLY": "true",
+        "MSSQL_APPLICATION_INTENT_READONLY": "true",
+        "MSSQL_MAX_ROWS": "200"
+      }
+    },
+    "sqlserver-prod": {
+      "command": "mcp-sqlserver",
+      "env": {
+        "MSSQL_SERVER": "SRVSQL01\\PROD",
+        "MSSQL_DATABASE": "master",
+        "MSSQL_READONLY": "true",
+        "MSSQL_APPLICATION_INTENT_READONLY": "true",
+        "MSSQL_MAX_ROWS": "100"
+      }
+    }
+  }
+}
