@@ -17,15 +17,15 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '9.0.x'
 
       - name: Pack
         run: dotnet pack dotnet/McpSqlServer/McpSqlServer.csproj -c Release -o dotnet/nupkg
 
-      - name: Publish to NuGet.org
+      - name: Publish to NuGet.org (Trusted Publisher)
         shell: pwsh
         run: |
           $package = Get-ChildItem -Path dotnet/nupkg/*.nupkg | Select-Object -First 1
           if (-not $package) { throw "Nenhum .nupkg encontrado em dotnet/nupkg" }
-          Write-Host "Publicando $($package.FullName)..."
+          Write-Host "Publicando $($package.FullName) via Trusted Publisher..."
           dotnet nuget push $package.FullName --source https://api.nuget.org/v3/index.json
