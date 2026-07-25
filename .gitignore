@@ -10,3 +10,6 @@ build/
 *.log
 .env
 .qodo/
+nupkg/
+**/bin/
+**/obj/

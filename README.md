@@ -22,7 +22,30 @@ de rede** — sem credenciais de aplicação.
 dotnet tool install --global McpSqlServer
 ```
 
-Configure no Gemini (`%USERPROFILE%\.gemini\settings.json`):
+Configure no Gemini (`%USERPROFILE%\.gemini\settings.json`) — **padrão corporativo com `dotnet dnx`**:
+
+```json
+{
+  "mcpServers": {
+    "sqlserver-hml": {
+      "command": "dotnet",
+      "args": [
+        "dnx",
+        "McpSqlServer",
+        "--yes",
+        "--source",
+        "https://api.nuget.org/v3/index.json"
+      ],
+      "env": {
+        "MCPMSSQL_CONNECTION_STRING": "Server=SQLHML;Integrated Security=SSPI;TrustServerCertificate=True;Database=master",
+        "MSSQL_READONLY": "true"
+      }
+    }
+  }
+}
+```
+
+Alternativa com tool global instalado:
 
 ```json
 {
@@ -30,8 +53,7 @@ Configure no Gemini (`%USERPROFILE%\.gemini\settings.json`):
     "sqlserver-hml": {
       "command": "mcp-sqlserver",
       "env": {
-        "MSSQL_SERVER": "SRVSQL01\\HML",
-        "MSSQL_DATABASE": "master",
+        "MCPMSSQL_CONNECTION_STRING": "Server=SQLHML;Integrated Security=SSPI;TrustServerCertificate=True;Database=master",
         "MSSQL_READONLY": "true"
       }
     }
@@ -86,6 +108,7 @@ executar_consulta(sql="SELECT TOP 10 * FROM dbo.Pedidos", database="Financeiro")
 
 Arquivos JSON de referência em [`docs/examples/`](docs/examples/):
 
+- `gemini-nuget-dnx.json` — **corporativo** com `dotnet dnx` + connection string
 - `gemini-multi-ambiente.json` — DEV + HML + PROD
 - `cursor-sqlserver-hml.json` — Cursor com servidor HML
 - `claude-desktop-hml.json` — Claude Desktop

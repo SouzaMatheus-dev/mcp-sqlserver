@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>McpSqlServer</RootNamespace>
+    <AssemblyName>McpSqlServer</AssemblyName>
+
+    <!-- NuGet -->
+    <PackageId>McpSqlServer</PackageId>
+    <Version>0.4.0</Version>
+    <Authors>matneves</Authors>
+    <Company>SouzaMatheus-dev</Company>
+    <Description>Servidor MCP corporativo para SQL Server com autenticação Windows e modo somente leitura.</Description>
+    <PackageTags>mcp;sql-server;windows-auth;readonly;gemini;cursor;dnx</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/SouzaMatheus-dev/mcp-sqlserver</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/SouzaMatheus-dev/mcp-sqlserver</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- dotnet tool + dotnet dnx -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>mcp-sqlserver</ToolCommandName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.4" />
+    <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
+  </ItemGroup>
+
+</Project>

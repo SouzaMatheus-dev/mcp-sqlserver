@@ -8,11 +8,49 @@
 
 ---
 
-## Opção 1 — NuGet (recomendado para corporativo)
+## Opção 1 — NuGet com dotnet dnx (recomendado corporativo)
 
-Pacote global .NET que expõe o comando `mcp-sqlserver` no PATH.
+Igual ao padrão `Alyio.McpMssql`: baixa e executa direto do NuGet, sem instalar manualmente.
 
-### Instalar
+### settings.json (Gemini / Cursor)
+
+```json
+{
+  "mcpServers": {
+    "sqlserver-hml": {
+      "command": "dotnet",
+      "args": [
+        "dnx",
+        "McpSqlServer",
+        "--yes",
+        "--source",
+        "https://api.nuget.org/v3/index.json"
+      ],
+      "env": {
+        "MCPMSSQL_CONNECTION_STRING": "Server=SQLHML;Integrated Security=SSPI;TrustServerCertificate=True;Database=master",
+        "MSSQL_READONLY": "true",
+        "MSSQL_MAX_ROWS": "200"
+      }
+    }
+  }
+}
+```
+
+Exemplo pronto: [`examples/gemini-nuget-dnx.json`](examples/gemini-nuget-dnx.json)
+
+### Variáveis de ambiente (.NET)
+
+| Variável | Descrição |
+|---|---|
+| `MCPMSSQL_CONNECTION_STRING` | Connection string completa (**recomendado**) |
+| `MSSQL_SERVER` | Alternativa: servidor/instância |
+| `MSSQL_DATABASE` | Banco padrão (default: `master`) |
+| `MSSQL_READONLY` | `true` por padrão |
+| `MSSQL_MAX_ROWS` | Limite de linhas (default: `200`) |
+
+---
+
+## Opção 2 — NuGet global tool
 
 ```powershell
 dotnet tool install --global McpSqlServer
@@ -52,7 +90,7 @@ dotnet tool uninstall --global McpSqlServer
 
 ---
 
-## Opção 2 — PyPI (Python)
+## Opção 3 — PyPI (Python)
 
 ### Instalar
 
@@ -92,7 +130,7 @@ DOMINIO\voce  | dbo           | MeuBanco    | SRVSQL01 | somente_leitura
 
 ---
 
-## Opção 3 — Desenvolvimento (clone do repositório)
+## Opção 4 — Desenvolvimento (clone do repositório)
 
 ```powershell
 git clone https://github.com/SouzaMatheus-dev/mcp-sqlserver.git

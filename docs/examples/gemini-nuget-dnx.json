@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "sqlserver-hml": {
+      "command": "dotnet",
+      "args": [
+        "dnx",
+        "McpSqlServer",
+        "--yes",
+        "--source",
+        "https://api.nuget.org/v3/index.json"
+      ],
+      "env": {
+        "MCPMSSQL_CONNECTION_STRING": "Server=SQLHML;Integrated Security=SSPI;TrustServerCertificate=True;Database=master",
+        "MSSQL_READONLY": "true",
+        "MSSQL_MAX_ROWS": "200"
+      }
+    }
+  }
+}
