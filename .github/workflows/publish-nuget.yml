@@ -22,10 +22,18 @@ jobs:
       - name: Pack
         run: dotnet pack dotnet/McpSqlServer/McpSqlServer.csproj -c Release -o dotnet/nupkg
 
-      - name: Publish to NuGet.org (Trusted Publisher)
+      - name: NuGet login (Trusted Publisher)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: matneves
+
+      - name: Publish to NuGet.org
         shell: pwsh
         run: |
           $package = Get-ChildItem -Path dotnet/nupkg/*.nupkg | Select-Object -First 1
           if (-not $package) { throw "Nenhum .nupkg encontrado em dotnet/nupkg" }
-          Write-Host "Publicando $($package.FullName) via Trusted Publisher..."
-          dotnet nuget push $package.FullName --source https://api.nuget.org/v3/index.json
+          Write-Host "Publicando $($package.FullName)..."
+          dotnet nuget push $package.FullName `
+            --api-key ${{ steps.login.outputs.NUGET_API_KEY }} `
+            --source https://api.nuget.org/v3/index.json
