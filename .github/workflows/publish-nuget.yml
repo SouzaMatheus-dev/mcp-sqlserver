@@ -22,6 +22,10 @@ jobs:
       - name: Pack
         run: dotnet pack dotnet/McpSqlServer/McpSqlServer.csproj -c Release -o dotnet/nupkg
 
-      # Trusted Publisher (NuGet.org) — sem API Key quando a policy estiver configurada
       - name: Publish to NuGet.org
-        run: dotnet nuget push dotnet/nupkg/*.nupkg --source https://api.nuget.org/v3/index.json
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem -Path dotnet/nupkg/*.nupkg | Select-Object -First 1
+          if (-not $package) { throw "Nenhum .nupkg encontrado em dotnet/nupkg" }
+          Write-Host "Publicando $($package.FullName)..."
+          dotnet nuget push $package.FullName --source https://api.nuget.org/v3/index.json
