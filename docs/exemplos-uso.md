@@ -101,7 +101,25 @@ Mostre o script SQL da procedure dbo.spRelatorioMensal.
 
 ---
 
-## 6. Comandos bloqueados (modo corporativo)
+## 6. Relacionamentos e dicionário de dados (v0.5.0)
+
+```
+Liste as foreign keys da tabela dbo.Pedidos no banco Vendas.
+→ listar_chaves_estrangeiras(database="Vendas", schema="dbo", tabela="Pedidos")
+
+Onde existe a coluna ClienteId?
+→ buscar_coluna(termo="ClienteId", database="Vendas")
+
+Busque objetos com "Pedido" no nome.
+→ buscar_objeto(termo="Pedido", database="Vendas")
+
+Qual a documentação MS_Description da tabela dbo.Pedidos?
+→ obter_documentacao_objeto(objeto="Pedidos", database="Vendas", schema="dbo")
+```
+
+---
+
+## 7. Comandos bloqueados (modo corporativo)
 
 Com `MSSQL_READONLY=true` (padrão), estes comandos são rejeitados:
 
@@ -123,7 +141,7 @@ Bloqueado: em modo corporativo somente leitura só são permitidas consultas que
 
 ---
 
-## 7. Cenário completo — analista no HML
+## 8. Cenário completo — analista no HML
 
 Prompt sugerido para o Gemini:
 

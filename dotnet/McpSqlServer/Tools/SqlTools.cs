@@ -230,6 +230,135 @@ public sealed class SqlTools(McpConfig config, SqlExecutor executor)
         return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database);
     }
 
+    [McpServerTool, Description("Lista foreign keys do banco. Opcionalmente filtra por schema ou tabela.")]
+    public string ListarChavesEstrangeiras(string database = "", string schema = "", string tabela = "")
+    {
+        var sql = """
+            SELECT
+                fk.name AS constraint_name,
+                SCHEMA_NAME(tp.schema_id) AS tabela_origem_schema,
+                tp.name AS tabela_origem,
+                cp.name AS coluna_origem,
+                SCHEMA_NAME(tr.schema_id) AS tabela_destino_schema,
+                tr.name AS tabela_destino,
+                cr.name AS coluna_destino
+            FROM sys.foreign_keys fk
+            INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+            INNER JOIN sys.tables tp ON fkc.parent_object_id = tp.object_id
+            INNER JOIN sys.tables tr ON fkc.referenced_object_id = tr.object_id
+            INNER JOIN sys.columns cp
+                ON fkc.parent_object_id = cp.object_id AND fkc.parent_column_id = cp.column_id
+            INNER JOIN sys.columns cr
+                ON fkc.referenced_object_id = cr.object_id AND fkc.referenced_column_id = cr.column_id
+            WHERE 1 = 1
+            """;
+        var parameters = new List<SqlParameter>();
+        if (!string.IsNullOrWhiteSpace(schema))
+        {
+            sql += " AND SCHEMA_NAME(tp.schema_id) = @schema";
+            parameters.Add(new SqlParameter("@schema", schema));
+        }
+        if (!string.IsNullOrWhiteSpace(tabela))
+        {
+            sql += " AND tp.name = @tabela";
+            parameters.Add(new SqlParameter("@tabela", tabela));
+        }
+        sql += " ORDER BY tabela_origem_schema, tabela_origem, constraint_name";
+        return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database, parameters.ToArray());
+    }
+
+    [McpServerTool, Description("Busca colunas pelo nome (LIKE). Ex: 'Cliente' encontra ClienteId, NomeCliente etc.")]
+    public string BuscarColuna(string termo, string database = "")
+    {
+        if (string.IsNullOrWhiteSpace(termo))
+        {
+            return "Informe um termo de busca para a coluna.";
+        }
+
+        const string sql = """
+            SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE COLUMN_NAME LIKE @termo
+            ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
+            """;
+        return executor.Execute(
+            sql,
+            string.IsNullOrWhiteSpace(database) ? null : database,
+            new SqlParameter("@termo", LikePattern(termo)));
+    }
+
+    [McpServerTool, Description("Busca tabelas, views e procedures pelo nome (LIKE).")]
+    public string BuscarObjeto(string termo, string database = "")
+    {
+        if (string.IsNullOrWhiteSpace(termo))
+        {
+            return "Informe um termo de busca para o objeto.";
+        }
+
+        const string sql = """
+            SELECT
+                SCHEMA_NAME(o.schema_id) AS schema_name,
+                o.name AS object_name,
+                o.type_desc AS tipo,
+                o.create_date,
+                o.modify_date
+            FROM sys.objects o
+            WHERE o.type IN ('U', 'V', 'P', 'PC', 'FN', 'IF', 'TF')
+              AND o.name LIKE @termo
+            ORDER BY schema_name, object_name
+            """;
+        return executor.Execute(
+            sql,
+            string.IsNullOrWhiteSpace(database) ? null : database,
+            new SqlParameter("@termo", LikePattern(termo)));
+    }
+
+    [McpServerTool, Description("Retorna MS_Description (documentação) de tabela/view/procedure e suas colunas.")]
+    public string ObterDocumentacaoObjeto(string objeto, string database = "", string schema = "dbo")
+    {
+        const string sql = """
+            SELECT
+                SCHEMA_NAME(o.schema_id) AS schema_name,
+                o.name AS object_name,
+                o.type_desc AS tipo,
+                'objeto' AS nivel,
+                CAST(ep.value AS NVARCHAR(MAX)) AS descricao
+            FROM sys.extended_properties ep
+            INNER JOIN sys.objects o ON ep.major_id = o.object_id AND ep.minor_id = 0
+            WHERE ep.name = 'MS_Description'
+              AND o.name = @objeto
+              AND SCHEMA_NAME(o.schema_id) = @schema
+            UNION ALL
+            SELECT
+                SCHEMA_NAME(o.schema_id) AS schema_name,
+                o.name AS object_name,
+                o.type_desc AS tipo,
+                c.name AS nivel,
+                CAST(ep.value AS NVARCHAR(MAX)) AS descricao
+            FROM sys.extended_properties ep
+            INNER JOIN sys.columns c ON ep.major_id = c.object_id AND ep.minor_id = c.column_id
+            INNER JOIN sys.objects o ON c.object_id = o.object_id
+            WHERE ep.name = 'MS_Description'
+              AND o.name = @objeto
+              AND SCHEMA_NAME(o.schema_id) = @schema
+            ORDER BY nivel
+            """;
+        return executor.Execute(
+            sql,
+            string.IsNullOrWhiteSpace(database) ? null : database,
+            new SqlParameter("@objeto", objeto),
+            new SqlParameter("@schema", schema));
+    }
+
     private static bool IsSafeIdentifier(string value) =>
         !string.IsNullOrWhiteSpace(value) && value.All(ch => char.IsLetterOrDigit(ch) || ch == '_');
+
+    private static string LikePattern(string termo)
+    {
+        var escaped = termo
+            .Replace("[", "[[]")
+            .Replace("%", "[%]")
+            .Replace("_", "[_]");
+        return $"%{escaped}%";
+    }
 }

@@ -8,9 +8,30 @@
 
 ---
 
-## Opção 1 — NuGet com dotnet dnx (recomendado corporativo)
+## .NET: qual opção usar?
 
-Igual ao padrão `Alyio.McpMssql`: baixa e executa direto do NuGet, sem instalar manualmente.
+| Opção | SDK necessário | Instalação | Quando usar |
+|---|---|---|---|
+| **`dotnet dnx`** | **.NET 10** (10.0.100+) | Nenhuma — baixa do NuGet a cada execução | Máquina com SDK 10, zero setup |
+| **Global tool** | **.NET 8+** | `dotnet tool install --global McpSqlServer` | Corporativo sem SDK 10 |
+| **`dotnet tool exec`** | **.NET 10** | Alternativa ao `dnx` | Mesmo que dnx |
+
+Verifique sua versão:
+
+```powershell
+dotnet --version
+```
+
+- `10.0.x` → pode usar **`dotnet dnx`** (Opção 1)
+- `8.x` ou `9.x` → use **global tool** (Opção 2)
+
+> O pacote **McpSqlServer** roda em .NET 8+, mas o comando **`dnx` só existe no SDK 10**.
+
+---
+
+## Opção 1 — NuGet com dotnet dnx (requer .NET 10 SDK)
+
+Baixa e executa direto do NuGet, sem instalar manualmente. **Requer SDK 10.0.100 ou superior.**
 
 ### settings.json (Gemini / Cursor)
 
@@ -38,7 +59,59 @@ Igual ao padrão `Alyio.McpMssql`: baixa e executa direto do NuGet, sem instalar
 
 Exemplo pronto: [`examples/gemini-nuget-dnx.json`](examples/gemini-nuget-dnx.json)
 
-### Variáveis de ambiente (.NET)
+---
+
+## Opção 2 — NuGet global tool (requer .NET 8+ SDK) — recomendado sem SDK 10
+
+Funciona em **qualquer máquina com .NET 8 SDK ou superior**, inclusive corporativo sem .NET 10.
+
+### Instalar
+
+```powershell
+dotnet tool install --global McpSqlServer
+```
+
+### Atualizar para nova versão
+
+```powershell
+dotnet tool update --global McpSqlServer
+```
+
+### settings.json
+
+```json
+{
+  "mcpServers": {
+    "sqlserver-hml": {
+      "command": "mcp-sqlserver",
+      "env": {
+        "MCPMSSQL_CONNECTION_STRING": "Server=SQLHML;Integrated Security=SSPI;TrustServerCertificate=True;Database=master",
+        "MSSQL_READONLY": "true"
+      }
+    }
+  }
+}
+```
+
+Exemplo pronto: [`examples/gemini-global-tool.json`](examples/gemini-global-tool.json)
+
+### Verificar
+
+```powershell
+dotnet tool list --global
+mcp-sqlserver --version
+where.exe mcp-sqlserver
+```
+
+### Desinstalar
+
+```powershell
+dotnet tool uninstall --global McpSqlServer
+```
+
+---
+
+## Variáveis de ambiente (.NET)
 
 | Variável | Descrição |
 |---|---|
@@ -47,46 +120,6 @@ Exemplo pronto: [`examples/gemini-nuget-dnx.json`](examples/gemini-nuget-dnx.jso
 | `MSSQL_DATABASE` | Banco padrão (default: `master`) |
 | `MSSQL_READONLY` | `true` por padrão |
 | `MSSQL_MAX_ROWS` | Limite de linhas (default: `200`) |
-
----
-
-## Opção 2 — NuGet global tool
-
-```powershell
-dotnet tool install --global McpSqlServer
-```
-
-### Atualizar
-
-```powershell
-dotnet tool update --global McpSqlServer
-```
-
-### Verificar
-
-```powershell
-mcp-sqlserver --version
-where.exe mcp-sqlserver
-```
-
-### Testar conexão
-
-```powershell
-$env:MSSQL_SERVER = "SRVSQL01\HML"
-$env:MSSQL_DATABASE = "master"
-$env:MSSQL_READONLY = "true"
-
-# O servidor MCP usa stdio — para testar conexão SQL diretamente:
-sqlcmd -S $env:MSSQL_SERVER -E -Q "SELECT SUSER_SNAME() AS login_windows"
-```
-
-> Se `sqlcmd` retornar `DOMINIO\seu.usuario`, a autenticação Windows está ok.
-
-### Desinstalar
-
-```powershell
-dotnet tool uninstall --global McpSqlServer
-```
 
 ---
 
@@ -101,31 +134,13 @@ pip install mcp-sqlserver
 ### Instalar versão específica
 
 ```powershell
-pip install mcp-sqlserver==0.2.0
+pip install mcp-sqlserver==0.5.0
 ```
 
 ### Verificar
 
 ```powershell
-mcp-sqlserver --help
 python -c "import mcp_sqlserver; print(mcp_sqlserver.__version__)"
-```
-
-### Testar conexão
-
-```powershell
-$env:MSSQL_SERVER = "SRVSQL01\HML"
-$env:MSSQL_DATABASE = "MeuBanco"
-
-python -c "from mcp_sqlserver.server import usuario_conectado; print(usuario_conectado())"
-```
-
-Saída esperada:
-
-```
-login_windows | usuario_banco | banco_atual | servidor | modo_mcp
---------------|---------------|-------------|----------|---------------
-DOMINIO\voce  | dbo           | MeuBanco    | SRVSQL01 | somente_leitura
 ```
 
 ---
@@ -138,19 +153,11 @@ cd mcp-sqlserver
 
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-```
-
-Executar localmente:
-
-```powershell
-$env:MSSQL_SERVER = "SRVSQL01\HML"
-.\.venv\Scripts\mcp-sqlserver.exe
+.\.venv\Scripts\python.exe -m pytest
 ```
 
 ---
 
 ## Próximo passo
-
-Após instalar, configure o cliente MCP:
 
 → [Configuração MCP](configuracao-mcp.md)

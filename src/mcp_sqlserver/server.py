@@ -7,7 +7,21 @@ from mcp_sqlserver.connection import connect
 from mcp_sqlserver.formatters import format_result
 from mcp_sqlserver.readonly import validar_consulta_leitura
 
-mcp = FastMCP("sqlserver")
+mcp = FastMCP(
+    "sqlserver",
+    instructions=(
+        "Especialista em SQL Server corporativo (somente leitura). "
+        "Antes de consultar dados: 1) listar_chaves_estrangeiras para entender JOINs, "
+        "2) obter_documentacao_objeto para MS_Description, "
+        "3) buscar_coluna/buscar_objeto para descobrir nomes. "
+        "Use o parâmetro database para trocar de banco no mesmo servidor."
+    ),
+)
+
+
+def _like_pattern(termo: str) -> str:
+    escaped = termo.replace("[", "[[]").replace("%", "[%]").replace("_", "[_]")
+    return f"%{escaped}%"
 
 
 def _executar(sql: str, params: tuple = (), database: str | None = None) -> str:
@@ -214,6 +228,115 @@ def executar_consulta(sql: str, database: str = "") -> str:
         if erro:
             return erro
     return _executar(sql, database=database or None)
+
+
+@mcp.tool()
+def listar_chaves_estrangeiras(
+    database: str = "",
+    schema: str = "",
+    tabela: str = "",
+) -> str:
+    """Lista foreign keys do banco. Opcionalmente filtra por schema ou tabela."""
+    sql = """
+        SELECT
+            fk.name AS constraint_name,
+            SCHEMA_NAME(tp.schema_id) AS tabela_origem_schema,
+            tp.name AS tabela_origem,
+            cp.name AS coluna_origem,
+            SCHEMA_NAME(tr.schema_id) AS tabela_destino_schema,
+            tr.name AS tabela_destino,
+            cr.name AS coluna_destino
+        FROM sys.foreign_keys fk
+        INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+        INNER JOIN sys.tables tp ON fkc.parent_object_id = tp.object_id
+        INNER JOIN sys.tables tr ON fkc.referenced_object_id = tr.object_id
+        INNER JOIN sys.columns cp
+            ON fkc.parent_object_id = cp.object_id AND fkc.parent_column_id = cp.column_id
+        INNER JOIN sys.columns cr
+            ON fkc.referenced_object_id = cr.object_id AND fkc.referenced_column_id = cr.column_id
+        WHERE 1 = 1
+    """
+    params: list[str] = []
+    if schema:
+        sql += " AND SCHEMA_NAME(tp.schema_id) = ? "
+        params.append(schema)
+    if tabela:
+        sql += " AND tp.name = ? "
+        params.append(tabela)
+    sql += " ORDER BY tabela_origem_schema, tabela_origem, constraint_name"
+    return _executar(sql, tuple(params), database or None)
+
+
+@mcp.tool()
+def buscar_coluna(termo: str, database: str = "") -> str:
+    """Busca colunas pelo nome (LIKE). Ex: 'Cliente' encontra ClienteId, NomeCliente etc."""
+    if not termo.strip():
+        return "Informe um termo de busca para a coluna."
+    sql = """
+        SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE COLUMN_NAME LIKE ?
+        ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
+    """
+    return _executar(sql, (_like_pattern(termo.strip()),), database or None)
+
+
+@mcp.tool()
+def buscar_objeto(termo: str, database: str = "") -> str:
+    """Busca tabelas, views e procedures pelo nome (LIKE)."""
+    if not termo.strip():
+        return "Informe um termo de busca para o objeto."
+    sql = """
+        SELECT
+            SCHEMA_NAME(o.schema_id) AS schema_name,
+            o.name AS object_name,
+            o.type_desc AS tipo,
+            o.create_date,
+            o.modify_date
+        FROM sys.objects o
+        WHERE o.type IN ('U', 'V', 'P', 'PC', 'FN', 'IF', 'TF')
+          AND o.name LIKE ?
+        ORDER BY schema_name, object_name
+    """
+    return _executar(sql, (_like_pattern(termo.strip()),), database or None)
+
+
+@mcp.tool()
+def obter_documentacao_objeto(
+    objeto: str,
+    database: str = "",
+    schema: str = "dbo",
+) -> str:
+    """Retorna MS_Description (documentação) de tabela/view/procedure e suas colunas."""
+    sql_objeto = """
+        SELECT
+            SCHEMA_NAME(o.schema_id) AS schema_name,
+            o.name AS object_name,
+            o.type_desc AS tipo,
+            'objeto' AS nivel,
+            CAST(ep.value AS NVARCHAR(MAX)) AS descricao
+        FROM sys.extended_properties ep
+        INNER JOIN sys.objects o ON ep.major_id = o.object_id AND ep.minor_id = 0
+        WHERE ep.name = 'MS_Description'
+          AND o.name = ?
+          AND SCHEMA_NAME(o.schema_id) = ?
+        UNION ALL
+        SELECT
+            SCHEMA_NAME(o.schema_id) AS schema_name,
+            o.name AS object_name,
+            o.type_desc AS tipo,
+            c.name AS nivel,
+            CAST(ep.value AS NVARCHAR(MAX)) AS descricao
+        FROM sys.extended_properties ep
+        INNER JOIN sys.columns c ON ep.major_id = c.object_id AND ep.minor_id = c.column_id
+        INNER JOIN sys.objects o ON c.object_id = o.object_id
+        WHERE ep.name = 'MS_Description'
+          AND o.name = ?
+          AND SCHEMA_NAME(o.schema_id) = ?
+        ORDER BY nivel
+    """
+    params = (objeto, schema, objeto, schema)
+    return _executar(sql_objeto, params, database or None)
 
 
 def run() -> None:

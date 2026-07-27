@@ -8,44 +8,22 @@ de rede** — sem credenciais de aplicação.
 
 ## Pacotes disponíveis
 
-| Registro | Pacote | Comando de instalação |
-|---|---|---|
-| **NuGet** (.NET) | `McpSqlServer` | `dotnet tool install --global McpSqlServer` |
-| **PyPI** (Python) | `mcp-sqlserver` | `pip install mcp-sqlserver` |
+| Registro | Pacote | Instalação | SDK necessário |
+|---|---|---|---|
+| **NuGet** (.NET) | `McpSqlServer` | `dotnet tool install --global McpSqlServer` | .NET **8+** |
+| **NuGet** (dnx) | `McpSqlServer` | `dotnet dnx McpSqlServer --yes` | .NET **10+** |
+| **PyPI** (Python) | `mcp-sqlserver` | `pip install mcp-sqlserver` | Python 3.10+ |
 
-> O pacote NuGet (.NET) é a distribuição recomendada para ambientes corporativos Windows.
-> O pacote Python permanece disponível para quem já usa stack Python.
+> **`dotnet dnx` exige SDK 10.** Em máquinas corporativas com .NET 8/9, use a **global tool** (`mcp-sqlserver`).
+> Veja [Instalação](docs/instalacao.md) para detalhes.
 
-## Início rápido (NuGet)
+## Início rápido (NuGet — global tool, .NET 8+)
 
 ```powershell
 dotnet tool install --global McpSqlServer
 ```
 
-Configure no Gemini (`%USERPROFILE%\.gemini\settings.json`) — **padrão corporativo com `dotnet dnx`**:
-
-```json
-{
-  "mcpServers": {
-    "sqlserver-hml": {
-      "command": "dotnet",
-      "args": [
-        "dnx",
-        "McpSqlServer",
-        "--yes",
-        "--source",
-        "https://api.nuget.org/v3/index.json"
-      ],
-      "env": {
-        "MCPMSSQL_CONNECTION_STRING": "Server=SQLHML;Integrated Security=SSPI;TrustServerCertificate=True;Database=master",
-        "MSSQL_READONLY": "true"
-      }
-    }
-  }
-}
-```
-
-Alternativa com tool global instalado:
+Configure no Gemini (`%USERPROFILE%\.gemini\settings.json`):
 
 ```json
 {
@@ -62,6 +40,27 @@ Alternativa com tool global instalado:
 ```
 
 Reinicie o cliente MCP e valide com a ferramenta `usuario_conectado`.
+
+## Início rápido (NuGet — dotnet dnx, requer .NET 10 SDK)
+
+```powershell
+dotnet --version   # precisa ser 10.0.x
+```
+
+```json
+{
+  "mcpServers": {
+    "sqlserver-hml": {
+      "command": "dotnet",
+      "args": ["dnx", "McpSqlServer", "--yes", "--source", "https://api.nuget.org/v3/index.json"],
+      "env": {
+        "MCPMSSQL_CONNECTION_STRING": "Server=SQLHML;Integrated Security=SSPI;TrustServerCertificate=True;Database=master",
+        "MSSQL_READONLY": "true"
+      }
+    }
+  }
+}
+```
 
 ## Início rápido (Python / PyPI)
 
@@ -108,7 +107,8 @@ executar_consulta(sql="SELECT TOP 10 * FROM dbo.Pedidos", database="Financeiro")
 
 Arquivos JSON de referência em [`docs/examples/`](docs/examples/):
 
-- `gemini-nuget-dnx.json` — **corporativo** com `dotnet dnx` + connection string
+- `gemini-nuget-dnx.json` — `dotnet dnx` (**requer .NET 10 SDK**)
+- `gemini-global-tool.json` — global tool (**requer .NET 8+ SDK**)
 - `gemini-multi-ambiente.json` — DEV + HML + PROD
 - `cursor-sqlserver-hml.json` — Cursor com servidor HML
 - `claude-desktop-hml.json` — Claude Desktop
@@ -128,6 +128,10 @@ Arquivos JSON de referência em [`docs/examples/`](docs/examples/):
 | `obter_definicao_sql` | Script SQL do objeto |
 | `consultar_view` | `SELECT TOP` seguro em view |
 | `executar_consulta` | `SELECT`/`WITH` validado |
+| `listar_chaves_estrangeiras` | Foreign keys (JOINs) |
+| `buscar_coluna` | Busca colunas pelo nome |
+| `buscar_objeto` | Busca tabelas/views/procedures |
+| `obter_documentacao_objeto` | MS_Description (dicionário de dados) |
 
 > Procedures **não são executadas** (`EXEC` bloqueado). Foco em leitura corporativa.
 

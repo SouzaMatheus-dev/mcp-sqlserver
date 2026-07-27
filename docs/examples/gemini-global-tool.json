@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "sqlserver-hml": {
+      "command": "mcp-sqlserver",
+      "env": {
+        "MCPMSSQL_CONNECTION_STRING": "Server=SQLHML;Integrated Security=SSPI;TrustServerCertificate=True;Database=master",
+        "MSSQL_READONLY": "true",
+        "MSSQL_APPLICATION_INTENT_READONLY": "true",
+        "MSSQL_MAX_ROWS": "200"
+      }
+    }
+  }
+}

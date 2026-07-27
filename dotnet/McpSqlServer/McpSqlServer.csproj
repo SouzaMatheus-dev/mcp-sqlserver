@@ -10,7 +10,7 @@
 
     <!-- NuGet -->
     <PackageId>McpSqlServer</PackageId>
-    <Version>0.4.4</Version>
+    <Version>0.5.0</Version>
     <Authors>matneves</Authors>
     <Company>SouzaMatheus-dev</Company>
     <Description>Servidor MCP corporativo para SQL Server com autenticação Windows e modo somente leitura.</Description>
