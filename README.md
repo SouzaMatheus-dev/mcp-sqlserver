@@ -132,6 +132,9 @@ Arquivos JSON de referência em [`docs/examples/`](docs/examples/):
 | `buscar_coluna` | Busca colunas pelo nome |
 | `buscar_objeto` | Busca tabelas/views/procedures |
 | `obter_documentacao_objeto` | MS_Description (dicionário de dados) |
+| `listar_indices` | Índices, unique, PK por tabela |
+| `listar_dependencias` | Quem referencia / é referenciado por um objeto |
+| `resumir_banco` | Contagens e TOP 20 maiores tabelas |
 
 > Procedures **não são executadas** (`EXEC` bloqueado). Foco em leitura corporativa.
 

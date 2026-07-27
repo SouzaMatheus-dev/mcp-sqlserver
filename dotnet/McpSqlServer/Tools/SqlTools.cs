@@ -350,6 +350,131 @@ public sealed class SqlTools(McpConfig config, SqlExecutor executor)
             new SqlParameter("@schema", schema));
     }
 
+    [McpServerTool, Description("Lista índices (clustered, nonclustered, unique, PK). Filtra por schema/tabela.")]
+    public string ListarIndices(string database = "", string schema = "", string tabela = "")
+    {
+        var sql = """
+            SELECT
+                SCHEMA_NAME(t.schema_id) AS schema_name,
+                t.name AS tabela,
+                i.name AS indice,
+                i.type_desc AS tipo_indice,
+                i.is_unique,
+                i.is_primary_key,
+                STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS colunas
+            FROM sys.indexes i
+            INNER JOIN sys.tables t ON i.object_id = t.object_id
+            INNER JOIN sys.index_columns ic
+                ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+            INNER JOIN sys.columns c
+                ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+            WHERE i.type > 0
+            """;
+        var parameters = new List<SqlParameter>();
+        if (!string.IsNullOrWhiteSpace(schema))
+        {
+            sql += " AND SCHEMA_NAME(t.schema_id) = @schema";
+            parameters.Add(new SqlParameter("@schema", schema));
+        }
+        if (!string.IsNullOrWhiteSpace(tabela))
+        {
+            sql += " AND t.name = @tabela";
+            parameters.Add(new SqlParameter("@tabela", tabela));
+        }
+        sql += """
+            GROUP BY SCHEMA_NAME(t.schema_id), t.name, i.name, i.type_desc, i.is_unique, i.is_primary_key
+            ORDER BY schema_name, tabela, indice
+            """;
+        return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database, parameters.ToArray());
+    }
+
+    [McpServerTool, Description("Lista dependências SQL de/para um objeto. direcao: ambos, referencia, referenciado_por.")]
+    public string ListarDependencias(
+        string objeto,
+        string database = "",
+        string schema = "dbo",
+        string direcao = "ambos")
+    {
+        var direcaoNorm = direcao.Trim().ToLowerInvariant();
+        if (direcaoNorm is not ("ambos" or "referencia" or "referenciado_por"))
+        {
+            return "direcao deve ser: ambos, referencia ou referenciado_por.";
+        }
+
+        var sql = """
+            SELECT
+                SCHEMA_NAME(o_ref.schema_id) AS referenciador_schema,
+                o_ref.name AS referenciador,
+                o_ref.type_desc AS tipo_referenciador,
+                SCHEMA_NAME(o_refd.schema_id) AS referenciado_schema,
+                o_refd.name AS referenciado,
+                o_refd.type_desc AS tipo_referenciado
+            FROM sys.sql_expression_dependencies d
+            INNER JOIN sys.objects o_ref ON d.referencing_id = o_ref.object_id
+            INNER JOIN sys.objects o_refd ON d.referenced_id = o_refd.object_id
+            WHERE 1 = 1
+            """;
+        var parameters = new List<SqlParameter>();
+        if (direcaoNorm is "ambos" or "referencia")
+        {
+            sql += " AND o_ref.name = @objeto AND SCHEMA_NAME(o_ref.schema_id) = @schema";
+            parameters.Add(new SqlParameter("@objeto", objeto));
+            parameters.Add(new SqlParameter("@schema", schema));
+        }
+        else
+        {
+            sql += " AND o_refd.name = @objeto AND SCHEMA_NAME(o_refd.schema_id) = @schema";
+            parameters.Add(new SqlParameter("@objeto", objeto));
+            parameters.Add(new SqlParameter("@schema", schema));
+        }
+
+        if (direcaoNorm == "ambos")
+        {
+            sql += " OR (o_refd.name = @objeto2 AND SCHEMA_NAME(o_refd.schema_id) = @schema2)";
+            parameters.Add(new SqlParameter("@objeto2", objeto));
+            parameters.Add(new SqlParameter("@schema2", schema));
+        }
+
+        sql += " ORDER BY referenciador_schema, referenciador, referenciado_schema, referenciado";
+        return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database, parameters.ToArray());
+    }
+
+    [McpServerTool, Description("Visão geral do banco: contagens por tipo de objeto e TOP 20 maiores tabelas.")]
+    public string ResumirBanco(string database = "")
+    {
+        const string sqlContagens = """
+            SELECT o.type_desc AS categoria, COUNT(*) AS quantidade
+            FROM sys.objects o
+            WHERE o.type IN ('U', 'V', 'P', 'PC', 'FN', 'IF', 'TF', 'TR')
+            GROUP BY o.type_desc
+            ORDER BY quantidade DESC
+            """;
+        const string sqlMaiores = """
+            SELECT TOP 20
+                SCHEMA_NAME(t.schema_id) AS schema_name,
+                t.name AS tabela,
+                SUM(p.rows) AS linhas_aprox,
+                CAST(SUM(a.total_pages) * 8.0 / 1024 AS DECIMAL(18, 2)) AS tamanho_mb
+            FROM sys.tables t
+            INNER JOIN sys.indexes i ON t.object_id = i.object_id
+            INNER JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
+            INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
+            WHERE i.index_id IN (0, 1)
+            GROUP BY SCHEMA_NAME(t.schema_id), t.name
+            ORDER BY tamanho_mb DESC
+            """;
+        var db = string.IsNullOrWhiteSpace(database) ? null : database;
+        var contagens = executor.Execute(sqlContagens, db);
+        var maiores = executor.Execute(sqlMaiores, db);
+        return $"""
+            === Contagens por tipo de objeto ===
+            {contagens}
+
+            === Maiores tabelas (TOP 20 por tamanho) ===
+            {maiores}
+            """;
+    }
+
     private static bool IsSafeIdentifier(string value) =>
         !string.IsNullOrWhiteSpace(value) && value.All(ch => char.IsLetterOrDigit(ch) || ch == '_');
 

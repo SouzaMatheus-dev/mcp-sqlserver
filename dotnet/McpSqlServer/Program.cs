@@ -20,9 +20,11 @@ builder.Services
     {
         options.ServerInstructions =
             "Especialista em SQL Server corporativo (somente leitura). " +
-            "Antes de consultar dados: 1) ListarChavesEstrangeiras para entender JOINs, " +
-            "2) ObterDocumentacaoObjeto para MS_Description, " +
-            "3) BuscarColuna/BuscarObjeto para descobrir nomes. " +
+            "Antes de consultar dados: 1) ListarChavesEstrangeiras e ListarIndices para entender JOINs, " +
+            "2) ListarDependencias para impacto entre objetos, " +
+            "3) ResumirBanco para visão geral, " +
+            "4) ObterDocumentacaoObjeto para MS_Description, " +
+            "5) BuscarColuna/BuscarObjeto para descobrir nomes. " +
             "Use o parâmetro database para trocar de banco no mesmo servidor.";
     })
     .WithStdioServerTransport()

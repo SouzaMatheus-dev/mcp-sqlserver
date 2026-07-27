@@ -119,7 +119,25 @@ Qual a documentação MS_Description da tabela dbo.Pedidos?
 
 ---
 
-## 7. Comandos bloqueados (modo corporativo)
+## 7. Índices, dependências e visão geral (v0.6.0)
+
+```
+Quais índices existem na tabela dbo.Pedidos?
+→ listar_indices(database="Vendas", schema="dbo", tabela="Pedidos")
+
+O que depende da view dbo.vwPedidosResumo?
+→ listar_dependencias(objeto="vwPedidosResumo", database="Vendas", schema="dbo", direcao="referenciado_por")
+
+De quais objetos a procedure dbo.spRelatorio depende?
+→ listar_dependencias(objeto="spRelatorio", database="Vendas", schema="dbo", direcao="referencia")
+
+Me dê um resumo do banco Vendas.
+→ resumir_banco(database="Vendas")
+```
+
+---
+
+## 8. Comandos bloqueados (modo corporativo)
 
 Com `MSSQL_READONLY=true` (padrão), estes comandos são rejeitados:
 
@@ -141,7 +159,7 @@ Bloqueado: em modo corporativo somente leitura só são permitidas consultas que
 
 ---
 
-## 8. Cenário completo — analista no HML
+## 9. Cenário completo — analista no HML
 
 Prompt sugerido para o Gemini:
 

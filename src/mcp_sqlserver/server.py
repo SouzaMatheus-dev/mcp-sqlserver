@@ -11,9 +11,11 @@ mcp = FastMCP(
     "sqlserver",
     instructions=(
         "Especialista em SQL Server corporativo (somente leitura). "
-        "Antes de consultar dados: 1) listar_chaves_estrangeiras para entender JOINs, "
-        "2) obter_documentacao_objeto para MS_Description, "
-        "3) buscar_coluna/buscar_objeto para descobrir nomes. "
+        "Antes de consultar dados: 1) listar_chaves_estrangeiras e listar_indices para entender JOINs, "
+        "2) listar_dependencias para impacto entre objetos, "
+        "3) resumir_banco para visão geral, "
+        "4) obter_documentacao_objeto para MS_Description, "
+        "5) buscar_coluna/buscar_objeto para descobrir nomes. "
         "Use o parâmetro database para trocar de banco no mesmo servidor."
     ),
 )
@@ -337,6 +339,122 @@ def obter_documentacao_objeto(
     """
     params = (objeto, schema, objeto, schema)
     return _executar(sql_objeto, params, database or None)
+
+
+@mcp.tool()
+def listar_indices(
+    database: str = "",
+    schema: str = "",
+    tabela: str = "",
+) -> str:
+    """Lista índices (clustered, nonclustered, unique, PK). Filtra por schema/tabela."""
+    sql = """
+        SELECT
+            SCHEMA_NAME(t.schema_id) AS schema_name,
+            t.name AS tabela,
+            i.name AS indice,
+            i.type_desc AS tipo_indice,
+            i.is_unique,
+            i.is_primary_key,
+            STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS colunas
+        FROM sys.indexes i
+        INNER JOIN sys.tables t ON i.object_id = t.object_id
+        INNER JOIN sys.index_columns ic
+            ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+        INNER JOIN sys.columns c
+            ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+        WHERE i.type > 0
+    """
+    params: list[str] = []
+    if schema:
+        sql += " AND SCHEMA_NAME(t.schema_id) = ? "
+        params.append(schema)
+    if tabela:
+        sql += " AND t.name = ? "
+        params.append(tabela)
+    sql += """
+        GROUP BY SCHEMA_NAME(t.schema_id), t.name, i.name, i.type_desc, i.is_unique, i.is_primary_key
+        ORDER BY schema_name, tabela, indice
+    """
+    return _executar(sql, tuple(params), database or None)
+
+
+@mcp.tool()
+def listar_dependencias(
+    objeto: str,
+    database: str = "",
+    schema: str = "dbo",
+    direcao: str = "ambos",
+) -> str:
+    """Lista dependências SQL de/para um objeto (views, procs, tabelas). direcao: ambos, referencia, referenciado_por."""
+    direcao_norm = direcao.strip().lower()
+    if direcao_norm not in ("ambos", "referencia", "referenciado_por"):
+        return "direcao deve ser: ambos, referencia ou referenciado_por."
+
+    sql = """
+        SELECT
+            SCHEMA_NAME(o_ref.schema_id) AS referenciador_schema,
+            o_ref.name AS referenciador,
+            o_ref.type_desc AS tipo_referenciador,
+            SCHEMA_NAME(o_refd.schema_id) AS referenciado_schema,
+            o_refd.name AS referenciado,
+            o_refd.type_desc AS tipo_referenciado
+        FROM sys.sql_expression_dependencies d
+        INNER JOIN sys.objects o_ref ON d.referencing_id = o_ref.object_id
+        INNER JOIN sys.objects o_refd ON d.referenced_id = o_refd.object_id
+        WHERE 1 = 1
+    """
+    params: list[str] = []
+    if direcao_norm in ("ambos", "referencia"):
+        sql += " AND o_ref.name = ? AND SCHEMA_NAME(o_ref.schema_id) = ? "
+        params.extend([objeto, schema])
+    elif direcao_norm == "referenciado_por":
+        sql += " AND o_refd.name = ? AND SCHEMA_NAME(o_refd.schema_id) = ? "
+        params.extend([objeto, schema])
+
+    if direcao_norm == "ambos":
+        sql += """
+            OR (o_refd.name = ? AND SCHEMA_NAME(o_refd.schema_id) = ?)
+        """
+        params.extend([objeto, schema])
+
+    sql += " ORDER BY referenciador_schema, referenciador, referenciado_schema, referenciado"
+    return _executar(sql, tuple(params), database or None)
+
+
+@mcp.tool()
+def resumir_banco(database: str = "") -> str:
+    """Visão geral do banco: contagens por tipo de objeto e TOP 20 maiores tabelas."""
+    sql_contagens = """
+        SELECT o.type_desc AS categoria, COUNT(*) AS quantidade
+        FROM sys.objects o
+        WHERE o.type IN ('U', 'V', 'P', 'PC', 'FN', 'IF', 'TF', 'TR')
+        GROUP BY o.type_desc
+        ORDER BY quantidade DESC
+    """
+    sql_maiores = """
+        SELECT TOP 20
+            SCHEMA_NAME(t.schema_id) AS schema_name,
+            t.name AS tabela,
+            SUM(p.rows) AS linhas_aprox,
+            CAST(SUM(a.total_pages) * 8.0 / 1024 AS DECIMAL(18, 2)) AS tamanho_mb
+        FROM sys.tables t
+        INNER JOIN sys.indexes i ON t.object_id = i.object_id
+        INNER JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
+        INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
+        WHERE i.index_id IN (0, 1)
+        GROUP BY SCHEMA_NAME(t.schema_id), t.name
+        ORDER BY tamanho_mb DESC
+    """
+    db = database or None
+    contagens = _executar(sql_contagens, database=db)
+    maiores = _executar(sql_maiores, database=db)
+    return (
+        "=== Contagens por tipo de objeto ===\n"
+        f"{contagens}\n\n"
+        "=== Maiores tabelas (TOP 20 por tamanho) ===\n"
+        f"{maiores}"
+    )
 
 
 def run() -> None:
