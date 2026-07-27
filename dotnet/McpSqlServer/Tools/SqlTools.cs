@@ -593,6 +593,112 @@ public sealed class SqlTools(McpConfig config, SqlExecutor executor)
         return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database, parameters.ToArray());
     }
 
+    [McpServerTool, Description("Lista consultas com maior tempo médio (DMVs). Requer MSSQL_ENABLE_PERFORMANCE_DMVS=true.")]
+    public string ConsultasLentas(string database = "", int top = 20)
+    {
+        var bloqueio = RequirePerformanceDmvs();
+        if (bloqueio is not null)
+        {
+            return bloqueio;
+        }
+
+        if (top < 1 || top > config.MaxRows)
+        {
+            return $"Bloqueado: top deve estar entre 1 e {config.MaxRows}.";
+        }
+
+        var sql = $"""
+            SELECT TOP ({top})
+                qs.execution_count,
+                qs.total_elapsed_time / 1000 AS total_elapsed_ms,
+                qs.total_elapsed_time / NULLIF(qs.execution_count, 0) / 1000 AS avg_elapsed_ms,
+                qs.total_worker_time / NULLIF(qs.execution_count, 0) / 1000 AS avg_cpu_ms,
+                qs.total_logical_reads / NULLIF(qs.execution_count, 0) AS avg_logical_reads,
+                SUBSTRING(
+                    st.text,
+                    (qs.statement_start_offset / 2) + 1,
+                    (
+                        CASE qs.statement_end_offset
+                            WHEN -1 THEN DATALENGTH(st.text)
+                            ELSE qs.statement_end_offset
+                        END - qs.statement_start_offset
+                    ) / 2 + 1
+                ) AS query_text
+            FROM sys.dm_exec_query_stats qs
+            CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+            WHERE st.dbid = DB_ID()
+            ORDER BY avg_elapsed_ms DESC
+            """;
+        return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database);
+    }
+
+    [McpServerTool, Description("Lista índices sem leituras (seeks/scans/lookups). Requer MSSQL_ENABLE_PERFORMANCE_DMVS=true.")]
+    public string IndicesNaoUtilizados(string database = "", string schema = "")
+    {
+        var bloqueio = RequirePerformanceDmvs();
+        if (bloqueio is not null)
+        {
+            return bloqueio;
+        }
+
+        var sql = """
+            SELECT
+                SCHEMA_NAME(o.schema_id) AS schema_name,
+                o.name AS tabela,
+                i.name AS indice,
+                i.type_desc AS tipo_indice,
+                ISNULL(us.user_seeks, 0) AS user_seeks,
+                ISNULL(us.user_scans, 0) AS user_scans,
+                ISNULL(us.user_lookups, 0) AS user_lookups,
+                ISNULL(us.user_updates, 0) AS user_updates
+            FROM sys.indexes i
+            INNER JOIN sys.objects o ON i.object_id = o.object_id
+            LEFT JOIN sys.dm_db_index_usage_stats us
+                ON i.object_id = us.object_id
+                AND i.index_id = us.index_id
+                AND us.database_id = DB_ID()
+            WHERE o.type = 'U'
+              AND i.type > 0
+              AND i.is_primary_key = 0
+              AND i.is_unique_constraint = 0
+              AND (
+                  us.index_id IS NULL
+                  OR (ISNULL(us.user_seeks, 0) + ISNULL(us.user_scans, 0) + ISNULL(us.user_lookups, 0)) = 0
+              )
+            """;
+        var parameters = new List<SqlParameter>();
+        if (!string.IsNullOrWhiteSpace(schema))
+        {
+            sql += " AND SCHEMA_NAME(o.schema_id) = @schema";
+            parameters.Add(new SqlParameter("@schema", schema));
+        }
+        sql += " ORDER BY schema_name, tabela, indice";
+        return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database, parameters.ToArray());
+    }
+
+    [McpServerTool, Description("Estima plano de execução (SHOWPLAN_XML) para SELECT validado. Requer MSSQL_ENABLE_PERFORMANCE_DMVS=true.")]
+    public string EstimarPlanoConsulta(string sql, string database = "")
+    {
+        var bloqueio = RequirePerformanceDmvs();
+        if (bloqueio is not null)
+        {
+            return bloqueio;
+        }
+
+        var error = ReadOnlyValidator.Validate(sql);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        return executor.ExecuteShowPlan(sql, string.IsNullOrWhiteSpace(database) ? null : database);
+    }
+
+    private string? RequirePerformanceDmvs() =>
+        config.PerformanceDmvsEnabled
+            ? null
+            : "Bloqueado: ferramentas de performance exigem MSSQL_ENABLE_PERFORMANCE_DMVS=true.";
+
     private static bool IsComparableType(string dataType) =>
         dataType is "int" or "bigint" or "smallint" or "tinyint" or "decimal" or "numeric"
             or "float" or "real" or "money" or "smallmoney" or "date" or "datetime"

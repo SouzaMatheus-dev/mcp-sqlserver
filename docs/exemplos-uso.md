@@ -152,7 +152,30 @@ Onde aparece a palavra "ClienteId" no código SQL do banco?
 
 ---
 
-## 9. Comandos bloqueados (modo corporativo)
+## 9. Performance (v0.8.0, opt-in)
+
+Requer `MSSQL_ENABLE_PERFORMANCE_DMVS=true` no `settings.json` (DMVs exigem permissões extras no SQL Server).
+
+```
+Quais as consultas mais lentas no banco Vendas?
+→ consultas_lentas(database="Vendas", top=20)
+
+Quais índices não estão sendo usados?
+→ indices_nao_utilizados(database="Vendas", schema="dbo")
+
+Estime o plano desta consulta:
+→ estimar_plano_consulta(sql="SELECT * FROM dbo.Pedidos WHERE Status = 'A'", database="Vendas")
+```
+
+Exemplo de env:
+
+```json
+"MSSQL_ENABLE_PERFORMANCE_DMVS": "true"
+```
+
+---
+
+## 10. Comandos bloqueados (modo corporativo)
 
 Com `MSSQL_READONLY=true` (padrão), estes comandos são rejeitados:
 
@@ -174,7 +197,7 @@ Bloqueado: em modo corporativo somente leitura só são permitidas consultas que
 
 ---
 
-## 10. Cenário completo — analista no HML
+## 11. Cenário completo — analista no HML
 
 Prompt sugerido para o Gemini:
 
@@ -191,7 +214,7 @@ O assistente encadeia as ferramentas automaticamente.
 
 ---
 
-## 11. Comparar ambientes (DEV vs HML)
+## 12. Comparar ambientes (DEV vs HML)
 
 Com três entradas no `settings.json` (`sqlserver-dev`, `sqlserver-hml`, `sqlserver-prod`):
 
@@ -204,7 +227,7 @@ Cada entrada MCP aponta para um `MSSQL_SERVER` diferente.
 
 ---
 
-## 12. Variáveis de ambiente — exemplos
+## 13. Variáveis de ambiente — exemplos
 
 ### Leitura conservadora (produção)
 

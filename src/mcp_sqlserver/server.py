@@ -4,7 +4,7 @@ from mcp.server.fastmcp import FastMCP
 
 from mcp_sqlserver import config
 from mcp_sqlserver.connection import connect
-from mcp_sqlserver.executor import execute as _executar
+from mcp_sqlserver.executor import execute as _executar, execute_showplan
 from mcp_sqlserver.readonly import validar_consulta_leitura
 from mcp_sqlserver.security import identificador_seguro
 
@@ -18,6 +18,8 @@ mcp = FastMCP(
         "4) obter_documentacao_objeto para MS_Description, "
         "5) buscar_coluna/buscar_objeto/buscar_texto_sql para descobrir nomes e lógica, "
         "6) amostrar_tabela e perfil_coluna para entender os dados. "
+        "Performance (consultas_lentas, indices_nao_utilizados, estimar_plano_consulta) exige "
+        "MSSQL_ENABLE_PERFORMANCE_DMVS=true. "
         "Use o parâmetro database para trocar de banco no mesmo servidor."
     ),
 )
@@ -26,6 +28,14 @@ mcp = FastMCP(
 def _like_pattern(termo: str) -> str:
     escaped = termo.replace("[", "[[]").replace("%", "[%]").replace("_", "[_]")
     return f"%{escaped}%"
+
+
+def _requer_performance_dmvs() -> str | None:
+    if not config.performance_dmvs_enabled():
+        return (
+            "Bloqueado: ferramentas de performance exigem MSSQL_ENABLE_PERFORMANCE_DMVS=true."
+        )
+    return None
 
 
 @mcp.tool()
@@ -561,6 +571,92 @@ def buscar_texto_sql(termo: str, database: str = "", schema: str = "") -> str:
         params.append(schema)
     sql += " ORDER BY schema_name, object_name"
     return _executar(sql, tuple(params), database or None)
+
+
+@mcp.tool()
+def consultas_lentas(database: str = "", top: int = 20) -> str:
+    """Lista consultas com maior tempo médio de execução (DMVs). Requer MSSQL_ENABLE_PERFORMANCE_DMVS=true."""
+    bloqueio = _requer_performance_dmvs()
+    if bloqueio:
+        return bloqueio
+    if top < 1 or top > config.max_rows():
+        return f"Bloqueado: top deve estar entre 1 e {config.max_rows()}."
+
+    sql = f"""
+        SELECT TOP ({top})
+            qs.execution_count,
+            qs.total_elapsed_time / 1000 AS total_elapsed_ms,
+            qs.total_elapsed_time / NULLIF(qs.execution_count, 0) / 1000 AS avg_elapsed_ms,
+            qs.total_worker_time / NULLIF(qs.execution_count, 0) / 1000 AS avg_cpu_ms,
+            qs.total_logical_reads / NULLIF(qs.execution_count, 0) AS avg_logical_reads,
+            SUBSTRING(
+                st.text,
+                (qs.statement_start_offset / 2) + 1,
+                (
+                    CASE qs.statement_end_offset
+                        WHEN -1 THEN DATALENGTH(st.text)
+                        ELSE qs.statement_end_offset
+                    END - qs.statement_start_offset
+                ) / 2 + 1
+            ) AS query_text
+        FROM sys.dm_exec_query_stats qs
+        CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+        WHERE st.dbid = DB_ID()
+        ORDER BY avg_elapsed_ms DESC
+    """
+    return _executar(sql, database=database or None)
+
+
+@mcp.tool()
+def indices_nao_utilizados(database: str = "", schema: str = "") -> str:
+    """Lista índices não clusterizados sem leituras (seeks/scans/lookups). Requer MSSQL_ENABLE_PERFORMANCE_DMVS=true."""
+    bloqueio = _requer_performance_dmvs()
+    if bloqueio:
+        return bloqueio
+
+    sql = """
+        SELECT
+            SCHEMA_NAME(o.schema_id) AS schema_name,
+            o.name AS tabela,
+            i.name AS indice,
+            i.type_desc AS tipo_indice,
+            ISNULL(us.user_seeks, 0) AS user_seeks,
+            ISNULL(us.user_scans, 0) AS user_scans,
+            ISNULL(us.user_lookups, 0) AS user_lookups,
+            ISNULL(us.user_updates, 0) AS user_updates
+        FROM sys.indexes i
+        INNER JOIN sys.objects o ON i.object_id = o.object_id
+        LEFT JOIN sys.dm_db_index_usage_stats us
+            ON i.object_id = us.object_id
+            AND i.index_id = us.index_id
+            AND us.database_id = DB_ID()
+        WHERE o.type = 'U'
+          AND i.type > 0
+          AND i.is_primary_key = 0
+          AND i.is_unique_constraint = 0
+          AND (
+              us.index_id IS NULL
+              OR (ISNULL(us.user_seeks, 0) + ISNULL(us.user_scans, 0) + ISNULL(us.user_lookups, 0)) = 0
+          )
+    """
+    params: list[str] = []
+    if schema:
+        sql += " AND SCHEMA_NAME(o.schema_id) = ?"
+        params.append(schema)
+    sql += " ORDER BY schema_name, tabela, indice"
+    return _executar(sql, tuple(params), database or None)
+
+
+@mcp.tool()
+def estimar_plano_consulta(sql: str, database: str = "") -> str:
+    """Estima plano de execução (SHOWPLAN_XML) para SELECT validado. Requer MSSQL_ENABLE_PERFORMANCE_DMVS=true."""
+    bloqueio = _requer_performance_dmvs()
+    if bloqueio:
+        return bloqueio
+    erro = validar_consulta_leitura(sql)
+    if erro:
+        return erro
+    return execute_showplan(sql, database or None)
 
 
 def run() -> None:
