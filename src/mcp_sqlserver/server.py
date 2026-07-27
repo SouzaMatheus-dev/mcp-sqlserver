@@ -4,8 +4,9 @@ from mcp.server.fastmcp import FastMCP
 
 from mcp_sqlserver import config
 from mcp_sqlserver.connection import connect
-from mcp_sqlserver.formatters import format_result
+from mcp_sqlserver.executor import execute as _executar
 from mcp_sqlserver.readonly import validar_consulta_leitura
+from mcp_sqlserver.security import identificador_seguro
 
 mcp = FastMCP(
     "sqlserver",
@@ -15,7 +16,8 @@ mcp = FastMCP(
         "2) listar_dependencias para impacto entre objetos, "
         "3) resumir_banco para visão geral, "
         "4) obter_documentacao_objeto para MS_Description, "
-        "5) buscar_coluna/buscar_objeto para descobrir nomes. "
+        "5) buscar_coluna/buscar_objeto/buscar_texto_sql para descobrir nomes e lógica, "
+        "6) amostrar_tabela e perfil_coluna para entender os dados. "
         "Use o parâmetro database para trocar de banco no mesmo servidor."
     ),
 )
@@ -24,12 +26,6 @@ mcp = FastMCP(
 def _like_pattern(termo: str) -> str:
     escaped = termo.replace("[", "[[]").replace("%", "[%]").replace("_", "[_]")
     return f"%{escaped}%"
-
-
-def _executar(sql: str, params: tuple = (), database: str | None = None) -> str:
-    with connect(database) as conn:
-        cursor = conn.execute(sql, *params)
-        return format_result(cursor)
 
 
 @mcp.tool()
@@ -455,6 +451,116 @@ def resumir_banco(database: str = "") -> str:
         "=== Maiores tabelas (TOP 20 por tamanho) ===\n"
         f"{maiores}"
     )
+
+
+_TIPOS_COMPARAVEIS = frozenset({
+    "int", "bigint", "smallint", "tinyint", "decimal", "numeric", "float", "real",
+    "money", "smallmoney", "date", "datetime", "datetime2", "smalldatetime", "time",
+})
+
+
+def _validar_identificadores(*nomes: str) -> str | None:
+    for nome in nomes:
+        if identificador_seguro(nome) is None:
+            return "Bloqueado: identificadores devem conter apenas letras, números e underscore."
+    return None
+
+
+@mcp.tool()
+def amostrar_tabela(tabela: str, database: str = "", schema: str = "dbo", top: int = 20) -> str:
+    """Amostra linhas de uma tabela (SELECT TOP N)."""
+    if top < 1 or top > config.max_rows():
+        return f"Bloqueado: top deve estar entre 1 e {config.max_rows()}."
+    erro_id = _validar_identificadores(schema, tabela)
+    if erro_id:
+        return erro_id
+    sql = f"SELECT TOP ({top}) * FROM [{schema}].[{tabela}]"
+    erro = validar_consulta_leitura(sql)
+    if erro:
+        return erro
+    return _executar(sql, database=database or None)
+
+
+@mcp.tool()
+def perfil_coluna(tabela: str, coluna: str, database: str = "", schema: str = "dbo") -> str:
+    """Perfil estatístico de uma coluna: nulos, distintos, min/max quando aplicável e amostras."""
+    erro_id = _validar_identificadores(schema, tabela, coluna)
+    if erro_id:
+        return erro_id
+
+    meta_sql = """
+        SELECT DATA_TYPE
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?
+    """
+    db = database or None
+    meta = _executar(meta_sql, (schema, tabela, coluna), db)
+    if "0 linha(s)" in meta:
+        return f"Coluna [{schema}].[{tabela}].[{coluna}] não encontrada."
+
+    data_type = ""
+    for line in meta.splitlines()[2:]:
+        if line.strip() and not line.startswith("-"):
+            data_type = line.strip().split("|")[0].strip().lower()
+            break
+
+    stats_sql = f"""
+        SELECT
+            COUNT(*) AS total_linhas,
+            SUM(CASE WHEN [{coluna}] IS NULL THEN 1 ELSE 0 END) AS nulos,
+            COUNT(DISTINCT [{coluna}]) AS valores_distintos
+        FROM [{schema}].[{tabela}]
+    """
+    stats = _executar(stats_sql, database=db)
+
+    extras: list[str] = []
+    if data_type in _TIPOS_COMPARAVEIS:
+        minmax_sql = f"""
+            SELECT MIN([{coluna}]) AS minimo, MAX([{coluna}]) AS maximo
+            FROM [{schema}].[{tabela}]
+        """
+        extras.append("=== Min / Max ===")
+        extras.append(_executar(minmax_sql, database=db))
+
+    amostra_sql = f"""
+        SELECT TOP 5 [{coluna}] AS valor, COUNT(*) AS ocorrencias
+        FROM [{schema}].[{tabela}]
+        WHERE [{coluna}] IS NOT NULL
+        GROUP BY [{coluna}]
+        ORDER BY ocorrencias DESC
+    """
+    extras.append("=== Valores mais frequentes (TOP 5) ===")
+    extras.append(_executar(amostra_sql, database=db))
+
+    return (
+        f"=== Perfil de [{schema}].[{tabela}].[{coluna}] (tipo: {data_type or 'desconhecido'}) ===\n"
+        f"{stats}\n\n"
+        + "\n\n".join(extras)
+    )
+
+
+@mcp.tool()
+def buscar_texto_sql(termo: str, database: str = "", schema: str = "") -> str:
+    """Busca texto dentro de views, procedures e functions (sys.sql_modules)."""
+    if not termo.strip():
+        return "Informe um termo de busca."
+    sql = """
+        SELECT
+            SCHEMA_NAME(o.schema_id) AS schema_name,
+            o.name AS object_name,
+            o.type_desc AS tipo,
+            LEFT(m.definition, 500) AS trecho
+        FROM sys.sql_modules m
+        INNER JOIN sys.objects o ON o.object_id = m.object_id
+        WHERE m.definition LIKE ?
+          AND o.type IN ('V', 'P', 'PC', 'FN', 'IF', 'TF')
+    """
+    params: list[str] = [_like_pattern(termo)]
+    if schema:
+        sql += " AND SCHEMA_NAME(o.schema_id) = ?"
+        params.append(schema)
+    sql += " ORDER BY schema_name, object_name"
+    return _executar(sql, tuple(params), database or None)
 
 
 def run() -> None:

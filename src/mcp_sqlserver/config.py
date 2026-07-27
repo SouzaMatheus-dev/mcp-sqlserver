@@ -30,3 +30,8 @@ def readonly() -> bool:
 
 def application_intent_readonly() -> bool:
     return os.environ.get("MSSQL_APPLICATION_INTENT_READONLY", "true").lower() != "false"
+
+
+def performance_dmvs_enabled() -> bool:
+    return os.environ.get("MSSQL_ENABLE_PERFORMANCE_DMVS", "false").lower() == "true"
+

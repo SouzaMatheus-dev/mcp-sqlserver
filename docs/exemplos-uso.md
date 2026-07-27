@@ -137,7 +137,22 @@ Me dê um resumo do banco Vendas.
 
 ---
 
-## 8. Comandos bloqueados (modo corporativo)
+## 8. Entender os dados (v0.7.0)
+
+```
+Amostre 10 linhas da tabela dbo.Pedidos.
+→ amostrar_tabela(tabela="Pedidos", database="Vendas", schema="dbo", top=10)
+
+Qual o perfil da coluna Status na tabela dbo.Pedidos?
+→ perfil_coluna(tabela="Pedidos", coluna="Status", database="Vendas", schema="dbo")
+
+Onde aparece a palavra "ClienteId" no código SQL do banco?
+→ buscar_texto_sql(termo="ClienteId", database="Vendas")
+```
+
+---
+
+## 9. Comandos bloqueados (modo corporativo)
 
 Com `MSSQL_READONLY=true` (padrão), estes comandos são rejeitados:
 
@@ -159,7 +174,7 @@ Bloqueado: em modo corporativo somente leitura só são permitidas consultas que
 
 ---
 
-## 9. Cenário completo — analista no HML
+## 10. Cenário completo — analista no HML
 
 Prompt sugerido para o Gemini:
 
@@ -176,7 +191,7 @@ O assistente encadeia as ferramentas automaticamente.
 
 ---
 
-## 8. Comparar ambientes (DEV vs HML)
+## 11. Comparar ambientes (DEV vs HML)
 
 Com três entradas no `settings.json` (`sqlserver-dev`, `sqlserver-hml`, `sqlserver-prod`):
 
@@ -189,7 +204,7 @@ Cada entrada MCP aponta para um `MSSQL_SERVER` diferente.
 
 ---
 
-## 9. Variáveis de ambiente — exemplos
+## 12. Variáveis de ambiente — exemplos
 
 ### Leitura conservadora (produção)
 

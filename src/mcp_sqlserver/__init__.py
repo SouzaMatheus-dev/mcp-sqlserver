@@ -1,3 +1,3 @@
 """Servidor MCP para SQL Server com autenticação Windows e modo corporativo somente leitura."""
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"

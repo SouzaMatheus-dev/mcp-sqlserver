@@ -13,6 +13,12 @@ public sealed class McpConfig
 
     public bool ReadOnly => GetBool("MSSQL_READONLY", defaultValue: true);
 
+    public bool PerformanceDmvsEnabled =>
+        string.Equals(
+            Environment.GetEnvironmentVariable("MSSQL_ENABLE_PERFORMANCE_DMVS"),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+
     public int MaxRows => GetInt("MSSQL_MAX_ROWS", defaultValue: 200);
 
     public int ConnectionTimeoutSeconds => GetInt("MSSQL_CONNECTION_TIMEOUT", defaultValue: 15);

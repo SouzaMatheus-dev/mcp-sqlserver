@@ -18,6 +18,54 @@ public sealed class SqlExecutor(McpConfig config)
         using var reader = command.ExecuteReader();
         return ResultFormatter.Format(reader, config.MaxRows);
     }
+
+    public string ExecuteShowPlan(string sql, string? database = null)
+    {
+        using var connection = new SqlConnection(config.GetConnectionString(database));
+        connection.Open();
+
+        using (var on = connection.CreateCommand())
+        {
+            on.CommandText = "SET SHOWPLAN_XML ON";
+            on.ExecuteNonQuery();
+        }
+
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = config.ConnectionTimeoutSeconds;
+
+            using var reader = command.ExecuteReader();
+            if (!reader.HasRows)
+            {
+                return "Plano de execução não retornado.";
+            }
+
+            var parts = new List<string>();
+            var count = 0;
+            while (count < config.MaxRows && reader.Read())
+            {
+                parts.Add(reader.IsDBNull(0) ? string.Empty : reader.GetString(0));
+                count++;
+            }
+
+            if (reader.Read())
+            {
+                parts.Add($"... plano truncado em {config.MaxRows} fragmento(s) ...");
+            }
+
+            return parts.Count > 0
+                ? string.Join(Environment.NewLine, parts)
+                : "Plano de execução vazio.";
+        }
+        finally
+        {
+            using var off = connection.CreateCommand();
+            off.CommandText = "SET SHOWPLAN_XML OFF";
+            off.ExecuteNonQuery();
+        }
+    }
 }
 
 internal static class ResultFormatter

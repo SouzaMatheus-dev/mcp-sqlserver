@@ -135,6 +135,9 @@ Arquivos JSON de referência em [`docs/examples/`](docs/examples/):
 | `listar_indices` | Índices, unique, PK por tabela |
 | `listar_dependencias` | Quem referencia / é referenciado por um objeto |
 | `resumir_banco` | Contagens e TOP 20 maiores tabelas |
+| `amostrar_tabela` | Amostra linhas de uma tabela (SELECT TOP) |
+| `perfil_coluna` | Estatísticas de coluna (nulos, distintos, min/max) |
+| `buscar_texto_sql` | Busca texto em views/procedures/functions |
 
 > Procedures **não são executadas** (`EXEC` bloqueado). Foco em leitura corporativa.
 

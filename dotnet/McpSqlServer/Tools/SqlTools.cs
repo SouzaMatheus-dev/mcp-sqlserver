@@ -475,6 +475,129 @@ public sealed class SqlTools(McpConfig config, SqlExecutor executor)
             """;
     }
 
+    [McpServerTool, Description("Amostra linhas de uma tabela (SELECT TOP N).")]
+    public string AmostrarTabela(string tabela, string database = "", string schema = "dbo", int top = 20)
+    {
+        if (top < 1 || top > config.MaxRows)
+        {
+            return $"Bloqueado: top deve estar entre 1 e {config.MaxRows}.";
+        }
+
+        if (!IsSafeIdentifier(schema) || !IsSafeIdentifier(tabela))
+        {
+            return "Bloqueado: schema e tabela devem conter apenas letras, números e underscore.";
+        }
+
+        var sql = $"SELECT TOP ({top}) * FROM [{schema}].[{tabela}]";
+        var error = ReadOnlyValidator.Validate(sql);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database);
+    }
+
+    [McpServerTool, Description("Perfil estatístico de uma coluna: nulos, distintos, min/max e amostras.")]
+    public string PerfilColuna(string tabela, string coluna, string database = "", string schema = "dbo")
+    {
+        if (!IsSafeIdentifier(schema) || !IsSafeIdentifier(tabela) || !IsSafeIdentifier(coluna))
+        {
+            return "Bloqueado: identificadores devem conter apenas letras, números e underscore.";
+        }
+
+        const string metaSql = """
+            SELECT DATA_TYPE
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @tabela AND COLUMN_NAME = @coluna
+            """;
+        var db = string.IsNullOrWhiteSpace(database) ? null : database;
+        var meta = executor.Execute(
+            metaSql,
+            db,
+            new SqlParameter("@schema", schema),
+            new SqlParameter("@tabela", tabela),
+            new SqlParameter("@coluna", coluna));
+
+        if (meta.Contains("(0 linha(s) exibida(s))", StringComparison.Ordinal))
+        {
+            return $"Coluna [{schema}].[{tabela}].[{coluna}] não encontrada.";
+        }
+
+        var dataType = meta.Split('\n')
+            .Skip(2)
+            .Select(line => line.Split('|').FirstOrDefault()?.Trim().ToLowerInvariant())
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "desconhecido";
+
+        var statsSql = $"""
+            SELECT
+                COUNT(*) AS total_linhas,
+                SUM(CASE WHEN [{coluna}] IS NULL THEN 1 ELSE 0 END) AS nulos,
+                COUNT(DISTINCT [{coluna}]) AS valores_distintos
+            FROM [{schema}].[{tabela}]
+            """;
+        var stats = executor.Execute(statsSql, db);
+
+        var extras = new List<string>();
+        if (IsComparableType(dataType))
+        {
+            var minMaxSql = $"SELECT MIN([{coluna}]) AS minimo, MAX([{coluna}]) AS maximo FROM [{schema}].[{tabela}]";
+            extras.Add("=== Min / Max ===");
+            extras.Add(executor.Execute(minMaxSql, db));
+        }
+
+        var amostraSql = $"""
+            SELECT TOP 5 [{coluna}] AS valor, COUNT(*) AS ocorrencias
+            FROM [{schema}].[{tabela}]
+            WHERE [{coluna}] IS NOT NULL
+            GROUP BY [{coluna}]
+            ORDER BY ocorrencias DESC
+            """;
+        extras.Add("=== Valores mais frequentes (TOP 5) ===");
+        extras.Add(executor.Execute(amostraSql, db));
+
+        return $"""
+            === Perfil de [{schema}].[{tabela}].[{coluna}] (tipo: {dataType}) ===
+            {stats}
+
+            {string.Join("\n\n", extras)}
+            """;
+    }
+
+    [McpServerTool, Description("Busca texto dentro de views, procedures e functions (sys.sql_modules).")]
+    public string BuscarTextoSql(string termo, string database = "", string schema = "")
+    {
+        if (string.IsNullOrWhiteSpace(termo))
+        {
+            return "Informe um termo de busca.";
+        }
+
+        var sql = """
+            SELECT
+                SCHEMA_NAME(o.schema_id) AS schema_name,
+                o.name AS object_name,
+                o.type_desc AS tipo,
+                LEFT(m.definition, 500) AS trecho
+            FROM sys.sql_modules m
+            INNER JOIN sys.objects o ON o.object_id = m.object_id
+            WHERE m.definition LIKE @termo
+              AND o.type IN ('V', 'P', 'PC', 'FN', 'IF', 'TF')
+            """;
+        var parameters = new List<SqlParameter> { new("@termo", LikePattern(termo)) };
+        if (!string.IsNullOrWhiteSpace(schema))
+        {
+            sql += " AND SCHEMA_NAME(o.schema_id) = @schema";
+            parameters.Add(new SqlParameter("@schema", schema));
+        }
+        sql += " ORDER BY schema_name, object_name";
+        return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database, parameters.ToArray());
+    }
+
+    private static bool IsComparableType(string dataType) =>
+        dataType is "int" or "bigint" or "smallint" or "tinyint" or "decimal" or "numeric"
+            or "float" or "real" or "money" or "smallmoney" or "date" or "datetime"
+            or "datetime2" or "smalldatetime" or "time";
+
     private static bool IsSafeIdentifier(string value) =>
         !string.IsNullOrWhiteSpace(value) && value.All(ch => char.IsLetterOrDigit(ch) || ch == '_');
 
