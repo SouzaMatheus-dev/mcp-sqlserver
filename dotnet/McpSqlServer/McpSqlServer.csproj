@@ -10,11 +10,11 @@
 
     <!-- NuGet -->
     <PackageId>McpSqlServer</PackageId>
-    <Version>0.8.0</Version>
+    <Version>0.8.1</Version>
     <Authors>matneves</Authors>
     <Company>SouzaMatheus-dev</Company>
-    <Description>Servidor MCP corporativo para SQL Server com autenticação Windows e modo somente leitura.</Description>
-    <PackageTags>mcp;sql-server;windows-auth;readonly;gemini;cursor;dnx</PackageTags>
+    <Description>Servidor MCP especialista em SQL Server: mapeamento, auditoria e consultas somente leitura com autenticação Windows.</Description>
+    <PackageTags>mcp;sql-server;windows-auth;readonly;gemini;cursor;dnx;database-tools</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/SouzaMatheus-dev/mcp-sqlserver</PackageProjectUrl>
     <RepositoryUrl>https://github.com/SouzaMatheus-dev/mcp-sqlserver</RepositoryUrl>
