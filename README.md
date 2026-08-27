@@ -177,8 +177,21 @@ git clone https://github.com/SouzaMatheus-dev/mcp-sqlserver.git
 cd mcp-sqlserver
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m pytest -m "not integration"
+dotnet test dotnet/McpSqlServer.Tests/McpSqlServer.Tests.csproj -c Release
 ```
+
+### Testes de integração (SQL Server)
+
+Requer instância SQL Server acessível. Defina a connection string e execute:
+
+```powershell
+$env:MCPMSSQL_TEST_CONNECTION_STRING = "Server=localhost;Uid=sa;Pwd=SuaSenha;TrustServerCertificate=yes;Database=master;"
+.\.venv\Scripts\python.exe -m pytest -m integration
+dotnet test dotnet/McpSqlServer.Tests/McpSqlServer.Tests.csproj -c Release
+```
+
+O CI executa esses testes automaticamente em pull requests com SQL Server 2022 em container.
 
 ## Licença
 
