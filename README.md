@@ -6,18 +6,17 @@ e **modo somente leitura** por padrão.
 Conecte Gemini, Cursor, Claude Desktop ou VS Code ao SQL Server usando o **seu usuário
 de rede** — sem credenciais de aplicação.
 
-## Pacotes disponíveis
+## Pacote NuGet
 
-| Registro | Pacote | Instalação | SDK necessário |
-|---|---|---|---|
-| **NuGet** (.NET) | `McpSqlServer` | `dotnet tool install --global McpSqlServer` | .NET **8+** |
-| **NuGet** (dnx) | `McpSqlServer` | `dotnet dnx McpSqlServer --yes` | .NET **10+** |
-| **PyPI** (Python) | `mcp-sqlserver` | `pip install mcp-sqlserver` | Python 3.10+ |
+| Instalação | Comando | SDK necessário |
+|---|---|---|
+| **Global tool** | `dotnet tool install --global McpSqlServer` | .NET **8+** |
+| **dotnet dnx** | `dotnet dnx McpSqlServer --yes` | .NET **10+** |
 
 > **`dotnet dnx` exige SDK 10.** Em máquinas corporativas com .NET 8/9, use a **global tool** (`mcp-sqlserver`).
 > Veja [Instalação](docs/instalacao.md) para detalhes.
 
-## Início rápido (NuGet — global tool, .NET 8+)
+## Início rápido (global tool, .NET 8+)
 
 ```powershell
 dotnet tool install --global McpSqlServer
@@ -41,7 +40,7 @@ Configure no Gemini (`%USERPROFILE%\.gemini\settings.json`):
 
 Reinicie o cliente MCP e valide com a ferramenta `usuario_conectado`.
 
-## Início rápido (NuGet — dotnet dnx, requer .NET 10 SDK)
+## Início rápido (dotnet dnx, requer .NET 10 SDK)
 
 ```powershell
 dotnet --version   # precisa ser 10.0.x
@@ -55,27 +54,6 @@ dotnet --version   # precisa ser 10.0.x
       "args": ["dnx", "McpSqlServer", "--yes", "--source", "https://api.nuget.org/v3/index.json"],
       "env": {
         "MCPMSSQL_CONNECTION_STRING": "Server=SQLHML;Integrated Security=SSPI;TrustServerCertificate=True;Database=master",
-        "MSSQL_READONLY": "true"
-      }
-    }
-  }
-}
-```
-
-## Início rápido (Python / PyPI)
-
-```powershell
-pip install mcp-sqlserver
-```
-
-```json
-{
-  "mcpServers": {
-    "sqlserver-hml": {
-      "command": "mcp-sqlserver",
-      "env": {
-        "MSSQL_SERVER": "SRVSQL01\\HML",
-        "MSSQL_DATABASE": "master",
         "MSSQL_READONLY": "true"
       }
     }
@@ -98,7 +76,7 @@ executar_consulta(sql="SELECT TOP 10 * FROM dbo.Pedidos", database="Financeiro")
 
 | Guia | Conteúdo |
 |---|---|
-| [Instalação](docs/instalacao.md) | NuGet, PyPI, requisitos e verificação |
+| [Instalação](docs/instalacao.md) | NuGet, requisitos e verificação |
 | [Configuração MCP](docs/configuracao-mcp.md) | Gemini, Cursor, Claude Desktop, VS Code |
 | [Exemplos de uso](docs/exemplos-uso.md) | Ferramentas, multi-banco, multi-ambiente |
 | [Publicação NuGet](docs/publicacao-nuget.md) | Build, pack e publish do pacote .NET |
@@ -154,9 +132,9 @@ Arquivos JSON de referência em [`docs/examples/`](docs/examples/):
 
 | Variável | Padrão | Descrição |
 |---|---|---|
-| `MSSQL_SERVER` | — | Servidor/instância (**obrigatória**) |
+| `MCPMSSQL_CONNECTION_STRING` | — | Connection string completa (**recomendado**) |
+| `MSSQL_SERVER` | — | Servidor/instância (alternativa) |
 | `MSSQL_DATABASE` | `master` | Banco padrão |
-| `MSSQL_DRIVER` | `ODBC Driver 17 for SQL Server` | Driver ODBC (Python) |
 | `MSSQL_READONLY` | `true` | Bloqueia DDL/DML/`EXEC` |
 | `MSSQL_APPLICATION_INTENT_READONLY` | `true` | `ApplicationIntent=ReadOnly` |
 | `MSSQL_MAX_ROWS` | `200` | Limite de linhas retornadas |
@@ -175,20 +153,14 @@ Arquivos JSON de referência em [`docs/examples/`](docs/examples/):
 ```powershell
 git clone https://github.com/SouzaMatheus-dev/mcp-sqlserver.git
 cd mcp-sqlserver
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m pytest -m "not integration"
-dotnet test dotnet/McpSqlServer.Tests/McpSqlServer.Tests.csproj -c Release
+dotnet test dotnet/McpSqlServer.Tests/McpSqlServer.Tests.csproj -c Release --filter "FullyQualifiedName!~IntegrationTests"
 ```
 
 ### Testes de integração (SQL Server)
 
-Requer instância SQL Server acessível. Defina a connection string e execute:
-
 ```powershell
-$env:MCPMSSQL_TEST_CONNECTION_STRING = "Server=localhost;Uid=sa;Pwd=SuaSenha;TrustServerCertificate=yes;Database=master;"
-.\.venv\Scripts\python.exe -m pytest -m integration
-dotnet test dotnet/McpSqlServer.Tests/McpSqlServer.Tests.csproj -c Release
+$env:MCPMSSQL_TEST_CONNECTION_STRING = "Server=localhost;User Id=sa;Password=SuaSenha;TrustServerCertificate=True;Database=master;"
+dotnet test dotnet/McpSqlServer.Tests/McpSqlServer.Tests.csproj -c Release --filter "FullyQualifiedName~IntegrationTests"
 ```
 
 O CI executa esses testes automaticamente em pull requests com SQL Server 2022 em container.

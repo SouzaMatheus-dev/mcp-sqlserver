@@ -4,7 +4,7 @@
 
 | Guia | Descrição |
 |---|---|
-| [Instalação](instalacao.md) | NuGet, PyPI, requisitos e verificação |
+| [Instalação](instalacao.md) | NuGet, requisitos e verificação |
 | [Configuração MCP](configuracao-mcp.md) | Gemini, Cursor, Claude Desktop, VS Code |
 | [Exemplos de uso](exemplos-uso.md) | Ferramentas, multi-banco, fluxos corporativos |
 | [Publicação NuGet](publicacao-nuget.md) | Build, pack, publish e CI/CD |
@@ -16,7 +16,8 @@ Copie e adapte os arquivos em [`examples/`](examples/):
 | Arquivo | Uso |
 |---|---|
 | [`gemini-multi-ambiente.json`](examples/gemini-multi-ambiente.json) | DEV + HML + PROD no Gemini |
-| [`gemini-python-venv.json`](examples/gemini-python-venv.json) | Gemini com venv Python local |
+| [`gemini-global-tool.json`](examples/gemini-global-tool.json) | Gemini com NuGet global tool |
+| [`gemini-nuget-dnx.json`](examples/gemini-nuget-dnx.json) | Gemini com dotnet dnx (.NET 10) |
 | [`cursor-sqlserver-hml.json`](examples/cursor-sqlserver-hml.json) | Cursor com NuGet global tool |
 | [`claude-desktop-hml.json`](examples/claude-desktop-hml.json) | Claude Desktop com HML |
 
@@ -29,15 +30,11 @@ MSSQL_READONLY=true                # somente leitura (padrão)
 MSSQL_APPLICATION_INTENT_READONLY=true
 MSSQL_MAX_ROWS=200
 MSSQL_CONNECTION_TIMEOUT=15
-MSSQL_DRIVER=ODBC Driver 17 for SQL Server   # apenas Python
+MCPMSSQL_CONNECTION_STRING=Server=...;Integrated Security=SSPI;...
 ```
 
 ## Instalação em uma linha
 
 ```powershell
-# NuGet (recomendado)
 dotnet tool install --global McpSqlServer
-
-# PyPI
-pip install mcp-sqlserver
 ```

@@ -13,8 +13,8 @@ Guia para publicar e consumir o pacote **McpSqlServer** no NuGet.org.
 | **Comando CLI** | `mcp-sqlserver` |
 | **Target** | `net8.0` (Windows) |
 
-O pacote expõe um servidor MCP idêntico ao Python, com as mesmas variáveis de ambiente
-e ferramentas.
+O pacote expõe um servidor MCP para SQL Server com as mesmas variáveis de ambiente
+e ferramentas documentadas neste repositório.
 
 ---
 
@@ -145,29 +145,13 @@ Siga [Semantic Versioning](https://semver.org/):
 Atualize a versão em:
 
 - `dotnet/McpSqlServer/McpSqlServer.csproj` → `<Version>`
-- `src/mcp_sqlserver/__init__.py` → `__version__`
-- `pyproject.toml` → `version`
 - Tag git: `git tag v0.2.0 && git push origin v0.2.0`
-
----
-
-## PyPI (pacote Python complementar)
-
-O pacote Python `mcp-sqlserver` pode ser publicado em paralelo:
-
-```powershell
-python -m pip install build twine
-python -m build
-twine upload dist/*
-```
-
-Registro: https://pypi.org/project/mcp-sqlserver/
 
 ---
 
 ## Checklist antes de publicar
 
-- [ ] Testes passando (`pytest` / `dotnet test`)
+- [ ] Testes passando (`dotnet test`)
 - [ ] Versão atualizada em todos os arquivos
 - [ ] README e docs revisados
 - [ ] Tag git criada (`v0.2.0`)

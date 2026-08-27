@@ -89,40 +89,6 @@ Arquivo: `%USERPROFILE%\.cursor\mcp.json` (ou configuração MCP do projeto)
 }
 ```
 
-### Python (venv local)
-
-```json
-{
-  "mcpServers": {
-    "sqlserver-hml": {
-      "command": "C:\\caminho\\mcp-sqlserver\\.venv\\Scripts\\mcp-sqlserver.exe",
-      "env": {
-        "MSSQL_SERVER": "SRVSQL01\\HML",
-        "MSSQL_DATABASE": "master",
-        "MSSQL_READONLY": "true"
-      }
-    }
-  }
-}
-```
-
-Alternativa com módulo Python:
-
-```json
-{
-  "mcpServers": {
-    "sqlserver-hml": {
-      "command": "C:\\caminho\\mcp-sqlserver\\.venv\\Scripts\\python.exe",
-      "args": ["-m", "mcp_sqlserver"],
-      "env": {
-        "MSSQL_SERVER": "SRVSQL01\\HML",
-        "MSSQL_DATABASE": "master"
-      }
-    }
-  }
-}
-```
-
 Exemplo pronto: [`examples/cursor-sqlserver-hml.json`](examples/cursor-sqlserver-hml.json)
 
 ---
@@ -203,6 +169,5 @@ Use `MSSQL_DATABASE=master` como padrão e passe `database="NomeDoBanco"` nas fe
 |---|---|
 | `MSSQL_SERVER não definida` | Verifique o bloco `env` no JSON |
 | Login failed | Confirme que seu usuário de rede tem acesso ao SQL Server |
-| Driver not found (Python) | Instale ODBC Driver 17/18 ou ajuste `MSSQL_DRIVER` |
 | Comando não encontrado | Reinstale: `dotnet tool install --global McpSqlServer` |
 | Gemini não lista MCP | Reinicie o CLI após editar `settings.json` |

@@ -123,37 +123,12 @@ dotnet tool uninstall --global McpSqlServer
 
 ---
 
-## Opção 3 — PyPI (Python)
-
-### Instalar
-
-```powershell
-pip install mcp-sqlserver
-```
-
-### Instalar versão específica
-
-```powershell
-pip install mcp-sqlserver==0.5.0
-```
-
-### Verificar
-
-```powershell
-python -c "import mcp_sqlserver; print(mcp_sqlserver.__version__)"
-```
-
----
-
-## Opção 4 — Desenvolvimento (clone do repositório)
+## Desenvolvimento (clone do repositório)
 
 ```powershell
 git clone https://github.com/SouzaMatheus-dev/mcp-sqlserver.git
 cd mcp-sqlserver
-
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m pytest
+dotnet test dotnet/McpSqlServer.Tests/McpSqlServer.Tests.csproj -c Release
 ```
 
 ---

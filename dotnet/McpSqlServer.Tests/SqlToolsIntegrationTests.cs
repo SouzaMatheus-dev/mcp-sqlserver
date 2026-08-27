@@ -52,10 +52,16 @@ public sealed class IntegrationFixture : IDisposable
 
     private static string FindSeedPath()
     {
+        var outputSeed = Path.Combine(AppContext.BaseDirectory, "seed.sql");
+        if (File.Exists(outputSeed))
+        {
+            return outputSeed;
+        }
+
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            var candidate = Path.Combine(directory.FullName, "tests", "integration", "seed.sql");
+            var candidate = Path.Combine(directory.FullName, "dotnet", "McpSqlServer.Tests", "seed.sql");
             if (File.Exists(candidate))
             {
                 return candidate;
@@ -64,7 +70,7 @@ public sealed class IntegrationFixture : IDisposable
             directory = directory.Parent;
         }
 
-        throw new FileNotFoundException("Arquivo tests/integration/seed.sql não encontrado.");
+        throw new FileNotFoundException("Arquivo seed.sql não encontrado.");
     }
 
     private static string WithDatabase(string connectionString, string database)

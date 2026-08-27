@@ -1,6 +1,0 @@
-# Instalação local (desenvolvimento)
--e .
-
-# Ou dependências diretas:
-# mcp>=1.2.0
-# pyodbc>=5.1.0
