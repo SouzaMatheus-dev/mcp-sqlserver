@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Database",
 ]
 dependencies = [
-    "mcp>=1.2.0",
+    "mcp>=1.2.0,<2",
     "pyodbc>=5.1.0",
 ]
 
