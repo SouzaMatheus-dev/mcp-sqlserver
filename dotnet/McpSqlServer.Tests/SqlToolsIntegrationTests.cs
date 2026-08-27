@@ -38,6 +38,7 @@ public sealed class IntegrationFixture : IDisposable
 
         var seedPath = FindSeedPath();
         var batches = File.ReadAllText(seedPath)
+            .Replace("\r\n", "\n")
             .Split("\nGO\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         foreach (var batch in batches)
@@ -82,7 +83,13 @@ public sealed class IntegrationFixture : IDisposable
     }
 }
 
-public class SqlToolsIntegrationTests : IClassFixture<IntegrationFixture>
+[CollectionDefinition("SqlServer")]
+public sealed class SqlServerCollection : ICollectionFixture<IntegrationFixture>
+{
+}
+
+[Collection("SqlServer")]
+public class SqlToolsIntegrationTests
 {
     private readonly IntegrationFixture _fixture;
 
@@ -142,7 +149,8 @@ public class SqlToolsIntegrationTests : IClassFixture<IntegrationFixture>
     }
 }
 
-public class SqlExecutorIntegrationTests : IClassFixture<IntegrationFixture>
+[Collection("SqlServer")]
+public class SqlExecutorIntegrationTests
 {
     private readonly IntegrationFixture _fixture;
 

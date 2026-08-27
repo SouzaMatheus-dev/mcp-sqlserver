@@ -1,4 +1,5 @@
 -- Schema mínimo para validar ferramentas MCP contra SQL Server real.
+IF OBJECT_ID('dbo.vwPedidos', 'V') IS NOT NULL DROP VIEW dbo.vwPedidos;
 IF OBJECT_ID('dbo.Pedidos', 'U') IS NOT NULL DROP TABLE dbo.Pedidos;
 IF OBJECT_ID('dbo.Clientes', 'U') IS NOT NULL DROP TABLE dbo.Clientes;
 GO
@@ -31,9 +32,18 @@ FROM dbo.Pedidos p
 INNER JOIN dbo.Clientes c ON c.Id = p.ClienteId;
 GO
 
-EXEC sys.sp_addextendedproperty
-    @name = N'MS_Description',
-    @value = N'Tabela de pedidos para testes MCP',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE',  @level1name = N'Pedidos';
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.extended_properties
+    WHERE name = N'MS_Description'
+      AND major_id = OBJECT_ID(N'dbo.Pedidos')
+      AND minor_id = 0
+)
+BEGIN
+    EXEC sys.sp_addextendedproperty
+        @name = N'MS_Description',
+        @value = N'Tabela de pedidos para testes MCP',
+        @level0type = N'SCHEMA', @level0name = N'dbo',
+        @level1type = N'TABLE',  @level1name = N'Pedidos';
+END
 GO
