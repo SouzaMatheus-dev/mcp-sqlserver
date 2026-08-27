@@ -70,7 +70,7 @@ listar_tabelas(database="Vendas")
 executar_consulta(sql="SELECT TOP 10 * FROM dbo.Pedidos", database="Financeiro")
 ```
 
-## Ferramentas MCP (24)
+## Ferramentas MCP (30)
 
 ### Conexão e inventário
 
@@ -118,15 +118,26 @@ executar_consulta(sql="SELECT TOP 10 * FROM dbo.Pedidos", database="Financeiro")
 | `consultar_view` | SELECT TOP em view |
 | `executar_consulta` | SELECT/WITH validado |
 
-### Performance (opt-in)
+### Tuning estrutural (sem DMVs de servidor)
 
-Requer `MSSQL_ENABLE_PERFORMANCE_DMVS=true`. As demais ferramentas funcionam normalmente sem essa flag.
+| Ferramenta | Descrição |
+|---|---|
+| `listar_fks_sem_indice` | FKs sem índice na coluna leading |
+| `analisar_cobertura_indice` | Cobertura de colunas por índices existentes |
+| `comparar_indices_redundantes` | Índices duplicados ou prefixo redundante |
+| `listar_colunas_candidatas_indice` | Colunas sem índice em tabelas grandes |
+| `medir_consulta` | STATISTICS IO/TIME para uma consulta |
+| `estimar_plano_consulta` | Plano SHOWPLAN_XML para SELECT |
+| `extrair_sugestoes_plano` | MissingIndex do plano estimado |
+
+### Performance em runtime (opt-in)
+
+Requer `MSSQL_ENABLE_PERFORMANCE_DMVS=true` — somente `consultas_lentas` e `indices_nao_utilizados`.
 
 | Ferramenta | Descrição |
 |---|---|
 | `consultas_lentas` | TOP consultas por tempo médio (DMVs) |
 | `indices_nao_utilizados` | Índices sem seeks/scans/lookups |
-| `estimar_plano_consulta` | Plano SHOWPLAN_XML para SELECT |
 
 > Procedures **não são executadas** (`EXEC` bloqueado). Foco em leitura corporativa.
 
@@ -136,8 +147,10 @@ Requer `MSSQL_ENABLE_PERFORMANCE_DMVS=true`. As demais ferramentas funcionam nor
 2. `listar_chaves_estrangeiras` + `listar_indices` → entender JOINs
 3. `buscar_texto_sql` / `buscar_coluna` → achar lógica e campos
 4. `amostrar_tabela` + `perfil_coluna` → entender os dados
-5. `listar_dependencias` → avaliar impacto de mudanças
-6. *(opt-in)* `consultas_lentas` / `estimar_plano_consulta` → propor melhorias
+5. `listar_fks_sem_indice` + `analisar_cobertura_indice` → tuning estrutural
+6. `medir_consulta` / `extrair_sugestoes_plano` → validar e propor índices
+7. `listar_dependencias` → avaliar impacto de mudanças
+8. *(opt-in)* `consultas_lentas` / `indices_nao_utilizados` → runtime em produção
 
 ## Variáveis de ambiente
 
@@ -150,7 +163,7 @@ Requer `MSSQL_ENABLE_PERFORMANCE_DMVS=true`. As demais ferramentas funcionam nor
 | `MSSQL_APPLICATION_INTENT_READONLY` | `true` | ApplicationIntent=ReadOnly |
 | `MSSQL_MAX_ROWS` | `200` | Limite de linhas retornadas |
 | `MSSQL_CONNECTION_TIMEOUT` | `15` | Timeout de conexão (segundos) |
-| `MSSQL_ENABLE_PERFORMANCE_DMVS` | `false` | Habilita ferramentas de performance |
+| `MSSQL_ENABLE_PERFORMANCE_DMVS` | `false` | Habilita consultas_lentas e indices_nao_utilizados |
 
 ## Segurança
 

@@ -138,9 +138,15 @@ Arquivos JSON de referência em [`docs/examples/`](docs/examples/):
 | `amostrar_tabela` | Amostra linhas de uma tabela (SELECT TOP) |
 | `perfil_coluna` | Estatísticas de coluna (nulos, distintos, min/max) |
 | `buscar_texto_sql` | Busca texto em views/procedures/functions |
+| `listar_fks_sem_indice` | FKs sem índice na coluna leading |
+| `analisar_cobertura_indice` | Cobertura de colunas por índices existentes |
+| `comparar_indices_redundantes` | Índices duplicados ou com prefixo redundante |
+| `listar_colunas_candidatas_indice` | Colunas sem índice em tabelas grandes |
+| `medir_consulta` | STATISTICS IO/TIME para uma consulta |
+| `estimar_plano_consulta` | Plano SHOWPLAN_XML (sem DMVs de servidor) |
+| `extrair_sugestoes_plano` | MissingIndex do plano estimado |
 | `consultas_lentas` | TOP consultas por tempo médio (opt-in DMVs) |
 | `indices_nao_utilizados` | Índices sem leituras (opt-in DMVs) |
-| `estimar_plano_consulta` | Plano SHOWPLAN_XML para SELECT (opt-in) |
 
 > Procedures **não são executadas** (`EXEC` bloqueado). Foco em leitura corporativa.
 
@@ -155,7 +161,7 @@ Arquivos JSON de referência em [`docs/examples/`](docs/examples/):
 | `MSSQL_APPLICATION_INTENT_READONLY` | `true` | `ApplicationIntent=ReadOnly` |
 | `MSSQL_MAX_ROWS` | `200` | Limite de linhas retornadas |
 | `MSSQL_CONNECTION_TIMEOUT` | `15` | Timeout de conexão (segundos) |
-| `MSSQL_ENABLE_PERFORMANCE_DMVS` | `false` | Habilita consultas_lentas, indices_nao_utilizados e estimar_plano_consulta |
+| `MSSQL_ENABLE_PERFORMANCE_DMVS` | `false` | Habilita consultas_lentas e indices_nao_utilizados (runtime) |
 
 ## Segurança
 

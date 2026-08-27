@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text;
 using Microsoft.Data.SqlClient;
 using ModelContextProtocol.Server;
 using McpSqlServer.Services;
@@ -593,6 +594,282 @@ public sealed class SqlTools(McpConfig config, SqlExecutor executor)
         return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database, parameters.ToArray());
     }
 
+    [McpServerTool, Description("Lista FKs cuja primeira coluna não é leading column de nenhum índice.")]
+    public string ListarFksSemIndice(string database = "", string schema = "")
+    {
+        var sql = """
+            SELECT
+                SCHEMA_NAME(t.schema_id) AS schema_name,
+                t.name AS tabela,
+                fk.name AS fk_name,
+                c.name AS coluna_fk,
+                SCHEMA_NAME(ref.schema_id) AS ref_schema,
+                ref.name AS tabela_referenciada,
+                cref.name AS coluna_referenciada
+            FROM sys.foreign_keys fk
+            INNER JOIN sys.tables t ON fk.parent_object_id = t.object_id
+            INNER JOIN sys.tables ref ON fk.referenced_object_id = ref.object_id
+            INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+            INNER JOIN sys.columns c
+                ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+            INNER JOIN sys.columns cref
+                ON fkc.referenced_object_id = cref.object_id
+                AND fkc.referenced_column_id = cref.column_id
+            WHERE fkc.constraint_column_id = 1
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM sys.index_columns ic
+                  INNER JOIN sys.indexes i
+                      ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                  WHERE ic.object_id = fk.parent_object_id
+                    AND ic.column_id = fkc.parent_column_id
+                    AND ic.key_ordinal = 1
+                    AND i.type > 0
+              )
+            """;
+        var parameters = new List<SqlParameter>();
+        if (!string.IsNullOrWhiteSpace(schema))
+        {
+            sql += " AND SCHEMA_NAME(t.schema_id) = @schema";
+            parameters.Add(new SqlParameter("@schema", schema));
+        }
+        sql += " ORDER BY schema_name, tabela, fk_name";
+        return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database, parameters.ToArray());
+    }
+
+    [McpServerTool, Description("Verifica se colunas (separadas por vírgula) são cobertas por índices existentes.")]
+    public string AnalisarCoberturaIndice(
+        string tabela,
+        string colunas,
+        string database = "",
+        string schema = "dbo")
+    {
+        var colList = colunas
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        if (colList.Count == 0)
+        {
+            return "Informe ao menos uma coluna (ex: Status,ClienteId).";
+        }
+
+        if (!IsSafeIdentifier(schema) || !IsSafeIdentifier(tabela)
+            || colList.Any(column => !IsSafeIdentifier(column)))
+        {
+            return "Bloqueado: identificadores devem conter apenas letras, números e underscore.";
+        }
+
+        const string sql = """
+            SELECT
+                i.name AS indice,
+                ic.key_ordinal,
+                ic.is_included_column,
+                c.name AS coluna
+            FROM sys.indexes i
+            INNER JOIN sys.tables t ON i.object_id = t.object_id
+            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+            INNER JOIN sys.index_columns ic
+                ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+            INNER JOIN sys.columns c
+                ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+            WHERE s.name = @schema AND t.name = @tabela AND i.type > 0
+            ORDER BY i.name, ic.is_included_column, ic.key_ordinal, c.name
+            """;
+
+        using var connection = new SqlConnection(config.GetConnectionString(
+            string.IsNullOrWhiteSpace(database) ? null : database));
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.Add(new SqlParameter("@schema", schema));
+        command.Parameters.Add(new SqlParameter("@tabela", tabela));
+
+        var indices = new Dictionary<string, (List<string> Keys, List<string> Includes)>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var indexName = reader.GetString(0);
+            var isIncluded = reader.GetBoolean(2);
+            var columnName = reader.GetString(3);
+            if (!indices.TryGetValue(indexName, out var parts))
+            {
+                parts = (new List<string>(), new List<string>());
+                indices[indexName] = parts;
+            }
+
+            if (isIncluded)
+            {
+                parts.Includes.Add(columnName);
+            }
+            else if (!parts.Keys.Contains(columnName))
+            {
+                parts.Keys.Add(columnName);
+            }
+        }
+
+        if (indices.Count == 0)
+        {
+            return $"Nenhum índice encontrado para [{schema}].[{tabela}].";
+        }
+
+        var output = new StringBuilder();
+        output.AppendLine($"Colunas analisadas: {string.Join(", ", colList)}");
+        output.AppendLine($"Tabela: [{schema}].[{tabela}]");
+        output.AppendLine();
+        output.AppendLine("indice | cobertura | colunas_chave | colunas_include");
+        output.AppendLine(new string('-', 72));
+
+        var best = "NAO";
+        foreach (var (indexName, parts) in indices.OrderBy(entry => entry.Key))
+        {
+            var coverage = EvaluateCoverage(colList, parts.Keys, parts.Includes);
+            if (coverage.StartsWith("COMPLETA", StringComparison.Ordinal))
+            {
+                best = "COMPLETA";
+            }
+            else if (coverage.StartsWith("PARCIAL", StringComparison.Ordinal) && best == "NAO")
+            {
+                best = "PARCIAL";
+            }
+
+            output.AppendLine(
+                $"{indexName} | {coverage} | " +
+                $"{(parts.Keys.Count > 0 ? string.Join(", ", parts.Keys) : "-")} | " +
+                $"{(parts.Includes.Count > 0 ? string.Join(", ", parts.Includes) : "-")}");
+        }
+
+        output.AppendLine();
+        output.AppendLine($"Melhor cobertura encontrada: {best}");
+        return output.ToString().TrimEnd();
+    }
+
+    [McpServerTool, Description("Lista índices redundantes: prefixo duplicado ou chaves idênticas.")]
+    public string CompararIndicesRedundantes(string database = "", string schema = "")
+    {
+        var sql = """
+            WITH index_keys AS (
+                SELECT
+                    SCHEMA_NAME(t.schema_id) AS schema_name,
+                    t.name AS tabela,
+                    i.name AS indice,
+                    i.index_id,
+                    i.object_id,
+                    STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS colunas_chave
+                FROM sys.indexes i
+                INNER JOIN sys.tables t ON i.object_id = t.object_id
+                INNER JOIN sys.index_columns ic
+                    ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                INNER JOIN sys.columns c
+                    ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                WHERE i.type > 0
+                  AND ic.key_ordinal > 0
+                  AND ic.is_included_column = 0
+                  AND t.is_ms_shipped = 0
+                GROUP BY t.schema_id, t.name, i.name, i.index_id, i.object_id
+            )
+            SELECT
+                a.schema_name,
+                a.tabela,
+                a.indice AS indice_a,
+                b.indice AS indice_b,
+                a.colunas_chave AS chaves_a,
+                b.colunas_chave AS chaves_b,
+                CASE
+                    WHEN a.colunas_chave = b.colunas_chave THEN 'duplicado'
+                    ELSE 'prefixo'
+                END AS tipo_redundancia
+            FROM index_keys a
+            INNER JOIN index_keys b
+                ON a.object_id = b.object_id
+                AND a.index_id < b.index_id
+            WHERE a.colunas_chave = b.colunas_chave
+               OR b.colunas_chave LIKE a.colunas_chave + ',%'
+            """;
+        var parameters = new List<SqlParameter>();
+        if (!string.IsNullOrWhiteSpace(schema))
+        {
+            sql += " AND a.schema_name = @schema";
+            parameters.Add(new SqlParameter("@schema", schema));
+        }
+        sql += " ORDER BY schema_name, tabela, indice_a, indice_b";
+        return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database, parameters.ToArray());
+    }
+
+    [McpServerTool, Description("Colunas sem índice em tabelas grandes — candidatas a índice.")]
+    public string ListarColunasCandidatasIndice(string database = "", string schema = "", int minLinhas = 1000)
+    {
+        if (minLinhas < 1)
+        {
+            return "min_linhas deve ser >= 1.";
+        }
+
+        var sql = """
+            SELECT TOP 50
+                SCHEMA_NAME(t.schema_id) AS schema_name,
+                t.name AS tabela,
+                c.name AS coluna,
+                ty.name AS tipo,
+                SUM(p.rows) AS linhas_aprox,
+                MAX(CASE WHEN fk.parent_column_id IS NOT NULL THEN 1 ELSE 0 END) AS em_fk
+            FROM sys.tables t
+            INNER JOIN sys.columns c ON t.object_id = c.object_id
+            INNER JOIN sys.types ty ON c.user_type_id = ty.user_type_id
+            INNER JOIN sys.partitions p
+                ON t.object_id = p.object_id AND p.index_id IN (0, 1)
+            LEFT JOIN sys.foreign_key_columns fk
+                ON fk.parent_object_id = c.object_id AND fk.parent_column_id = c.column_id
+            WHERE t.is_ms_shipped = 0
+              AND ty.name NOT IN ('text', 'ntext', 'image', 'xml', 'varchar', 'nvarchar', 'varbinary')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM sys.index_columns ic
+                  INNER JOIN sys.indexes i
+                      ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                  WHERE ic.object_id = t.object_id
+                    AND ic.column_id = c.column_id
+                    AND ic.key_ordinal > 0
+                    AND i.type > 0
+              )
+            """;
+        var parameters = new List<SqlParameter>();
+        if (!string.IsNullOrWhiteSpace(schema))
+        {
+            sql += " AND SCHEMA_NAME(t.schema_id) = @schema";
+            parameters.Add(new SqlParameter("@schema", schema));
+        }
+        sql += """
+            GROUP BY t.schema_id, t.name, c.name, ty.name
+            HAVING SUM(p.rows) >= @minLinhas
+            ORDER BY em_fk DESC, linhas_aprox DESC, schema_name, tabela, coluna
+            """;
+        parameters.Add(new SqlParameter("@minLinhas", minLinhas));
+        return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database, parameters.ToArray());
+    }
+
+    [McpServerTool, Description("Executa SELECT validado com SET STATISTICS IO, TIME ON.")]
+    public string MedirConsulta(string sql, string database = "")
+    {
+        var error = ReadOnlyValidator.Validate(sql);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        return executor.ExecuteWithStatistics(sql, string.IsNullOrWhiteSpace(database) ? null : database);
+    }
+
+    [McpServerTool, Description("Estima plano SHOWPLAN_XML e extrai sugestões MissingIndex.")]
+    public string ExtrairSugestoesPlano(string sql, string database = "")
+    {
+        var error = ReadOnlyValidator.Validate(sql);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        var plan = executor.ExecuteShowPlan(sql, string.IsNullOrWhiteSpace(database) ? null : database);
+        return ShowPlanParser.ExtractMissingIndexSuggestions(plan);
+    }
+
     [McpServerTool, Description("Lista consultas com maior tempo médio (DMVs). Requer MSSQL_ENABLE_PERFORMANCE_DMVS=true.")]
     public string ConsultasLentas(string database = "", int top = 20)
     {
@@ -676,15 +953,9 @@ public sealed class SqlTools(McpConfig config, SqlExecutor executor)
         return executor.Execute(sql, string.IsNullOrWhiteSpace(database) ? null : database, parameters.ToArray());
     }
 
-    [McpServerTool, Description("Estima plano de execução (SHOWPLAN_XML) para SELECT validado. Requer MSSQL_ENABLE_PERFORMANCE_DMVS=true.")]
+    [McpServerTool, Description("Estima plano de execução (SHOWPLAN_XML) para SELECT validado. Não exige DMVs de servidor.")]
     public string EstimarPlanoConsulta(string sql, string database = "")
     {
-        var bloqueio = RequirePerformanceDmvs();
-        if (bloqueio is not null)
-        {
-            return bloqueio;
-        }
-
         var error = ReadOnlyValidator.Validate(sql);
         if (error is not null)
         {
@@ -703,6 +974,26 @@ public sealed class SqlTools(McpConfig config, SqlExecutor executor)
         dataType is "int" or "bigint" or "smallint" or "tinyint" or "decimal" or "numeric"
             or "float" or "real" or "money" or "smallmoney" or "date" or "datetime"
             or "datetime2" or "smalldatetime" or "time";
+
+    private static string EvaluateCoverage(IReadOnlyList<string> columns, List<string> keys, List<string> includes)
+    {
+        if (keys.Count == 0 && includes.Count == 0)
+        {
+            return "NAO";
+        }
+
+        if (keys.Count >= columns.Count && keys.Take(columns.Count).SequenceEqual(columns))
+        {
+            return "COMPLETA (prefixo leading)";
+        }
+
+        if (columns.All(column => keys.Contains(column) || includes.Contains(column)))
+        {
+            return "PARCIAL";
+        }
+
+        return columns.Any(column => keys.Contains(column) || includes.Contains(column)) ? "PARCIAL" : "NAO";
+    }
 
     private static bool IsSafeIdentifier(string value) =>
         !string.IsNullOrWhiteSpace(value) && value.All(ch => char.IsLetterOrDigit(ch) || ch == '_');

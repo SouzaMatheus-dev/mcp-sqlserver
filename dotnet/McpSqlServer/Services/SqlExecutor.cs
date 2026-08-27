@@ -66,6 +66,52 @@ public sealed class SqlExecutor(McpConfig config)
             off.ExecuteNonQuery();
         }
     }
+
+    public string ExecuteWithStatistics(string sql, string? database = null)
+    {
+        var messages = new StringBuilder();
+        using var connection = new SqlConnection(config.GetConnectionString(database));
+        connection.InfoMessage += (_, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Message))
+            {
+                messages.AppendLine(e.Message.Trim());
+            }
+        };
+
+        connection.Open();
+
+        using (var on = connection.CreateCommand())
+        {
+            on.CommandText = "SET STATISTICS IO, TIME ON";
+            on.ExecuteNonQuery();
+        }
+
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = config.ConnectionTimeoutSeconds;
+
+            using var reader = command.ExecuteReader();
+            do
+            {
+                while (reader.Read())
+                {
+                }
+            } while (reader.NextResult());
+        }
+        finally
+        {
+            using var off = connection.CreateCommand();
+            off.CommandText = "SET STATISTICS IO, TIME OFF";
+            off.ExecuteNonQuery();
+        }
+
+        return messages.Length > 0
+            ? messages.ToString().TrimEnd()
+            : "Consulta executada, mas STATISTICS IO/TIME não retornou mensagens. Verifique permissões no banco.";
+    }
 }
 
 internal static class ResultFormatter

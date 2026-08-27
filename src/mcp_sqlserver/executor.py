@@ -24,3 +24,31 @@ def execute_showplan(sql: str, database: str | None = None) -> str:
             return "\n".join(parts) if parts else "Plano de execução vazio."
         finally:
             conn.execute("SET SHOWPLAN_XML OFF")
+
+
+def execute_with_statistics(sql: str, database: str | None = None) -> str:
+    with connect(database) as conn:
+        conn.autocommit = True
+        cursor = conn.cursor()
+        cursor.execute("SET STATISTICS IO, TIME ON")
+        try:
+            cursor.execute(sql)
+            if cursor.description:
+                while cursor.fetchmany(1000):
+                    pass
+            messages: list[str] = []
+            for source in (cursor.messages, getattr(conn, "messages", None)):
+                if not source:
+                    continue
+                for _level, msg in source:
+                    text = str(msg).strip()
+                    if text:
+                        messages.append(text)
+            if messages:
+                return "\n".join(messages)
+            return (
+                "Consulta executada, mas STATISTICS IO/TIME não retornou mensagens. "
+                "Verifique permissões no banco."
+            )
+        finally:
+            cursor.execute("SET STATISTICS IO, TIME OFF")

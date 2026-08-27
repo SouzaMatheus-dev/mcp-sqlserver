@@ -4,7 +4,12 @@ from mcp.server.fastmcp import FastMCP
 
 from mcp_sqlserver import config
 from mcp_sqlserver.connection import connect
-from mcp_sqlserver.executor import execute as _executar, execute_showplan
+from mcp_sqlserver.executor import (
+    execute as _executar,
+    execute_showplan,
+    execute_with_statistics,
+)
+from mcp_sqlserver.plan import extrair_sugestoes_missing_index
 from mcp_sqlserver.readonly import validar_consulta_leitura
 from mcp_sqlserver.security import identificador_seguro
 
@@ -17,9 +22,10 @@ mcp = FastMCP(
         "3) resumir_banco para visão geral, "
         "4) obter_documentacao_objeto para MS_Description, "
         "5) buscar_coluna/buscar_objeto/buscar_texto_sql para descobrir nomes e lógica, "
-        "6) amostrar_tabela e perfil_coluna para entender os dados. "
-        "Performance (consultas_lentas, indices_nao_utilizados, estimar_plano_consulta) exige "
-        "MSSQL_ENABLE_PERFORMANCE_DMVS=true. "
+        "6) amostrar_tabela e perfil_coluna para entender os dados, "
+        "7) listar_fks_sem_indice, analisar_cobertura_indice e comparar_indices_redundantes para tuning estrutural, "
+        "8) estimar_plano_consulta, medir_consulta e extrair_sugestoes_plano sem DMVs de servidor. "
+        "Somente consultas_lentas e indices_nao_utilizados exigem MSSQL_ENABLE_PERFORMANCE_DMVS=true. "
         "Use o parâmetro database para trocar de banco no mesmo servidor."
     ),
 )
@@ -573,6 +579,248 @@ def buscar_texto_sql(termo: str, database: str = "", schema: str = "") -> str:
     return _executar(sql, tuple(params), database or None)
 
 
+def _avaliar_cobertura(colunas: list[str], chaves: list[str], includes: list[str]) -> str:
+    if not chaves and not includes:
+        return "NAO"
+    if chaves[: len(colunas)] == colunas:
+        return "COMPLETA (prefixo leading)"
+    if all(coluna in chaves or coluna in includes for coluna in colunas):
+        return "PARCIAL"
+    if any(coluna in chaves or coluna in includes for coluna in colunas):
+        return "PARCIAL"
+    return "NAO"
+
+
+@mcp.tool()
+def listar_fks_sem_indice(database: str = "", schema: str = "") -> str:
+    """Lista foreign keys cuja primeira coluna não é leading column de nenhum índice."""
+    sql = """
+        SELECT
+            SCHEMA_NAME(t.schema_id) AS schema_name,
+            t.name AS tabela,
+            fk.name AS fk_name,
+            c.name AS coluna_fk,
+            SCHEMA_NAME(ref.schema_id) AS ref_schema,
+            ref.name AS tabela_referenciada,
+            cref.name AS coluna_referenciada
+        FROM sys.foreign_keys fk
+        INNER JOIN sys.tables t ON fk.parent_object_id = t.object_id
+        INNER JOIN sys.tables ref ON fk.referenced_object_id = ref.object_id
+        INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+        INNER JOIN sys.columns c
+            ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+        INNER JOIN sys.columns cref
+            ON fkc.referenced_object_id = cref.object_id
+            AND fkc.referenced_column_id = cref.column_id
+        WHERE fkc.constraint_column_id = 1
+          AND NOT EXISTS (
+              SELECT 1
+              FROM sys.index_columns ic
+              INNER JOIN sys.indexes i
+                  ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+              WHERE ic.object_id = fk.parent_object_id
+                AND ic.column_id = fkc.parent_column_id
+                AND ic.key_ordinal = 1
+                AND i.type > 0
+          )
+    """
+    params: list[str] = []
+    if schema:
+        sql += " AND SCHEMA_NAME(t.schema_id) = ?"
+        params.append(schema)
+    sql += " ORDER BY schema_name, tabela, fk_name"
+    return _executar(sql, tuple(params), database or None)
+
+
+@mcp.tool()
+def analisar_cobertura_indice(
+    tabela: str,
+    colunas: str,
+    database: str = "",
+    schema: str = "dbo",
+) -> str:
+    """Verifica se colunas (separadas por vírgula) são cobertas por índices existentes."""
+    col_list = [coluna.strip() for coluna in colunas.split(",") if coluna.strip()]
+    if not col_list:
+        return "Informe ao menos uma coluna (ex: Status,ClienteId)."
+    erro_id = _validar_identificadores(schema, tabela, *col_list)
+    if erro_id:
+        return erro_id
+
+    sql = """
+        SELECT
+            i.name AS indice,
+            ic.key_ordinal,
+            ic.is_included_column,
+            c.name AS coluna
+        FROM sys.indexes i
+        INNER JOIN sys.tables t ON i.object_id = t.object_id
+        INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+        INNER JOIN sys.index_columns ic
+            ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+        INNER JOIN sys.columns c
+            ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+        WHERE s.name = ? AND t.name = ? AND i.type > 0
+        ORDER BY i.name, ic.is_included_column, ic.key_ordinal, c.name
+    """
+    db = database or None
+    with connect(db) as conn:
+        rows = conn.execute(sql, schema, tabela).fetchall()
+
+    if not rows:
+        return f"Nenhum índice encontrado para [{schema}].[{tabela}]."
+
+    indices: dict[str, dict[str, list[str]]] = {}
+    for indice, _ordinal, is_included, coluna in rows:
+        bucket = indices.setdefault(indice, {"chaves": [], "includes": []})
+        if is_included:
+            bucket["includes"].append(coluna)
+        elif coluna not in bucket["chaves"]:
+            bucket["chaves"].append(coluna)
+
+    linhas = [
+        f"Colunas analisadas: {', '.join(col_list)}",
+        f"Tabela: [{schema}].[{tabela}]",
+        "",
+        "indice | cobertura | colunas_chave | colunas_include",
+        "-" * 72,
+    ]
+    melhor = "NAO"
+    for indice, partes in sorted(indices.items()):
+        cobertura = _avaliar_cobertura(col_list, partes["chaves"], partes["includes"])
+        if cobertura.startswith("COMPLETA"):
+            melhor = "COMPLETA"
+        elif cobertura.startswith("PARCIAL") and melhor == "NAO":
+            melhor = "PARCIAL"
+        linhas.append(
+            f"{indice} | {cobertura} | {', '.join(partes['chaves']) or '-'} | "
+            f"{', '.join(partes['includes']) or '-'}"
+        )
+
+    linhas.extend(["", f"Melhor cobertura encontrada: {melhor}"])
+    return "\n".join(linhas)
+
+
+@mcp.tool()
+def comparar_indices_redundantes(database: str = "", schema: str = "") -> str:
+    """Lista índices redundantes: prefixo duplicado ou chaves idênticas na mesma tabela."""
+    sql = """
+        WITH index_keys AS (
+            SELECT
+                SCHEMA_NAME(t.schema_id) AS schema_name,
+                t.name AS tabela,
+                i.name AS indice,
+                i.index_id,
+                i.object_id,
+                STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS colunas_chave
+            FROM sys.indexes i
+            INNER JOIN sys.tables t ON i.object_id = t.object_id
+            INNER JOIN sys.index_columns ic
+                ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+            INNER JOIN sys.columns c
+                ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+            WHERE i.type > 0
+              AND ic.key_ordinal > 0
+              AND ic.is_included_column = 0
+              AND t.is_ms_shipped = 0
+            GROUP BY t.schema_id, t.name, i.name, i.index_id, i.object_id
+        )
+        SELECT
+            a.schema_name,
+            a.tabela,
+            a.indice AS indice_a,
+            b.indice AS indice_b,
+            a.colunas_chave AS chaves_a,
+            b.colunas_chave AS chaves_b,
+            CASE
+                WHEN a.colunas_chave = b.colunas_chave THEN 'duplicado'
+                ELSE 'prefixo'
+            END AS tipo_redundancia
+        FROM index_keys a
+        INNER JOIN index_keys b
+            ON a.object_id = b.object_id
+            AND a.index_id < b.index_id
+        WHERE a.colunas_chave = b.colunas_chave
+           OR b.colunas_chave LIKE a.colunas_chave + ',%'
+    """
+    params: list[str] = []
+    if schema:
+        sql += " AND a.schema_name = ?"
+        params.append(schema)
+    sql += " ORDER BY schema_name, tabela, indice_a, indice_b"
+    return _executar(sql, tuple(params), database or None)
+
+
+@mcp.tool()
+def listar_colunas_candidatas_indice(
+    database: str = "",
+    schema: str = "",
+    min_linhas: int = 1000,
+) -> str:
+    """Lista colunas sem índice em tabelas grandes — candidatas a índice (metadados)."""
+    if min_linhas < 1:
+        return "min_linhas deve ser >= 1."
+
+    sql = """
+        SELECT TOP 50
+            SCHEMA_NAME(t.schema_id) AS schema_name,
+            t.name AS tabela,
+            c.name AS coluna,
+            ty.name AS tipo,
+            SUM(p.rows) AS linhas_aprox,
+            MAX(CASE WHEN fk.parent_column_id IS NOT NULL THEN 1 ELSE 0 END) AS em_fk
+        FROM sys.tables t
+        INNER JOIN sys.columns c ON t.object_id = c.object_id
+        INNER JOIN sys.types ty ON c.user_type_id = ty.user_type_id
+        INNER JOIN sys.partitions p
+            ON t.object_id = p.object_id AND p.index_id IN (0, 1)
+        LEFT JOIN sys.foreign_key_columns fk
+            ON fk.parent_object_id = c.object_id AND fk.parent_column_id = c.column_id
+        WHERE t.is_ms_shipped = 0
+          AND ty.name NOT IN ('text', 'ntext', 'image', 'xml', 'varchar', 'nvarchar', 'varbinary')
+          AND NOT EXISTS (
+              SELECT 1
+              FROM sys.index_columns ic
+              INNER JOIN sys.indexes i
+                  ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+              WHERE ic.object_id = t.object_id
+                AND ic.column_id = c.column_id
+                AND ic.key_ordinal > 0
+                AND i.type > 0
+          )
+    """
+    params: list[str | int] = []
+    if schema:
+        sql += " AND SCHEMA_NAME(t.schema_id) = ?"
+        params.append(schema)
+    sql += """
+        GROUP BY t.schema_id, t.name, c.name, ty.name
+        HAVING SUM(p.rows) >= ?
+        ORDER BY em_fk DESC, linhas_aprox DESC, schema_name, tabela, coluna
+    """
+    params.append(min_linhas)
+    return _executar(sql, tuple(params), database or None)
+
+
+@mcp.tool()
+def medir_consulta(sql: str, database: str = "") -> str:
+    """Executa SELECT validado com SET STATISTICS IO, TIME ON (logical reads e tempo)."""
+    erro = validar_consulta_leitura(sql)
+    if erro:
+        return erro
+    return execute_with_statistics(sql, database or None)
+
+
+@mcp.tool()
+def extrair_sugestoes_plano(sql: str, database: str = "") -> str:
+    """Estima plano SHOWPLAN_XML e extrai sugestões MissingIndex para a consulta."""
+    erro = validar_consulta_leitura(sql)
+    if erro:
+        return erro
+    plano = execute_showplan(sql, database or None)
+    return extrair_sugestoes_missing_index(plano)
+
+
 @mcp.tool()
 def consultas_lentas(database: str = "", top: int = 20) -> str:
     """Lista consultas com maior tempo médio de execução (DMVs). Requer MSSQL_ENABLE_PERFORMANCE_DMVS=true."""
@@ -649,10 +897,7 @@ def indices_nao_utilizados(database: str = "", schema: str = "") -> str:
 
 @mcp.tool()
 def estimar_plano_consulta(sql: str, database: str = "") -> str:
-    """Estima plano de execução (SHOWPLAN_XML) para SELECT validado. Requer MSSQL_ENABLE_PERFORMANCE_DMVS=true."""
-    bloqueio = _requer_performance_dmvs()
-    if bloqueio:
-        return bloqueio
+    """Estima plano de execução (SHOWPLAN_XML) para SELECT validado. Não exige DMVs de servidor."""
     erro = validar_consulta_leitura(sql)
     if erro:
         return erro

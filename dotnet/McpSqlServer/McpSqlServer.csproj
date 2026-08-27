@@ -10,7 +10,7 @@
 
     <!-- NuGet -->
     <PackageId>McpSqlServer</PackageId>
-    <Version>0.8.1</Version>
+    <Version>0.9.0</Version>
     <Authors>matneves</Authors>
     <Company>SouzaMatheus-dev</Company>
     <Description>Servidor MCP especialista em SQL Server: mapeamento, auditoria e consultas somente leitura com autenticação Windows.</Description>

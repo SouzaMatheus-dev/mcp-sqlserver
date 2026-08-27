@@ -152,9 +152,36 @@ Onde aparece a palavra "ClienteId" no código SQL do banco?
 
 ---
 
-## 9. Performance (v0.8.0, opt-in)
+## 9. Tuning estrutural (v0.9.0 — sem DMVs de servidor)
 
-Requer `MSSQL_ENABLE_PERFORMANCE_DMVS=true` no `settings.json` (DMVs exigem permissões extras no SQL Server).
+```
+Quais FKs não têm índice de suporte?
+→ listar_fks_sem_indice(database="Vendas", schema="dbo")
+
+As colunas Status,ClienteId da tabela Pedidos têm índice?
+→ analisar_cobertura_indice(tabela="Pedidos", colunas="Status,ClienteId", database="Vendas", schema="dbo")
+
+Existem índices redundantes no banco?
+→ comparar_indices_redundantes(database="Vendas", schema="dbo")
+
+Quais colunas em tabelas grandes são candidatas a índice?
+→ listar_colunas_candidatas_indice(database="Vendas", schema="dbo", min_linhas=1000)
+
+Meça IO e tempo desta consulta:
+→ medir_consulta(sql="SELECT * FROM dbo.Pedidos WHERE Status = 'A'", database="Vendas")
+
+Estime o plano e extraia sugestões de índice:
+→ extrair_sugestoes_plano(sql="SELECT * FROM dbo.Pedidos WHERE Status = 'A'", database="Vendas")
+
+Estime o plano completo (XML):
+→ estimar_plano_consulta(sql="SELECT * FROM dbo.Pedidos WHERE Status = 'A'", database="Vendas")
+```
+
+---
+
+## 10. Performance em runtime (v0.8.0, opt-in)
+
+Requer `MSSQL_ENABLE_PERFORMANCE_DMVS=true` — somente para estatísticas globais do servidor.
 
 ```
 Quais as consultas mais lentas no banco Vendas?
@@ -162,9 +189,6 @@ Quais as consultas mais lentas no banco Vendas?
 
 Quais índices não estão sendo usados?
 → indices_nao_utilizados(database="Vendas", schema="dbo")
-
-Estime o plano desta consulta:
-→ estimar_plano_consulta(sql="SELECT * FROM dbo.Pedidos WHERE Status = 'A'", database="Vendas")
 ```
 
 Exemplo de env:
@@ -175,7 +199,7 @@ Exemplo de env:
 
 ---
 
-## 10. Comandos bloqueados (modo corporativo)
+## 11. Comandos bloqueados (modo corporativo)
 
 Com `MSSQL_READONLY=true` (padrão), estes comandos são rejeitados:
 
@@ -197,7 +221,7 @@ Bloqueado: em modo corporativo somente leitura só são permitidas consultas que
 
 ---
 
-## 11. Cenário completo — analista no HML
+## 12. Cenário completo — analista no HML
 
 Prompt sugerido para o Gemini:
 
@@ -214,7 +238,7 @@ O assistente encadeia as ferramentas automaticamente.
 
 ---
 
-## 12. Comparar ambientes (DEV vs HML)
+## 13. Comparar ambientes (DEV vs HML)
 
 Com três entradas no `settings.json` (`sqlserver-dev`, `sqlserver-hml`, `sqlserver-prod`):
 
@@ -227,7 +251,7 @@ Cada entrada MCP aponta para um `MSSQL_SERVER` diferente.
 
 ---
 
-## 13. Variáveis de ambiente — exemplos
+## 14. Variáveis de ambiente — exemplos
 
 ### Leitura conservadora (produção)
 
