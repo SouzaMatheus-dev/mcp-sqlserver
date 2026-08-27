@@ -2,6 +2,8 @@
 
 from mcp.server.fastmcp import FastMCP
 
+import pyodbc
+
 from mcp_sqlserver import config
 from mcp_sqlserver.connection import connect
 from mcp_sqlserver.executor import (
@@ -664,8 +666,13 @@ def analisar_cobertura_indice(
         ORDER BY i.name, ic.is_included_column, ic.key_ordinal, c.name
     """
     db = database or None
-    with connect(db) as conn:
-        rows = conn.execute(sql, schema, tabela).fetchall()
+    try:
+        with connect(db) as conn:
+            rows = conn.execute(sql, schema, tabela).fetchall()
+    except pyodbc.Error as exc:
+        from mcp_sqlserver.executor import _format_sql_error
+
+        return _format_sql_error(exc)
 
     if not rows:
         return f"Nenhum índice encontrado para [{schema}].[{tabela}]."

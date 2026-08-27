@@ -7,110 +7,131 @@ public sealed class SqlExecutor(McpConfig config)
 {
     public string Execute(string sql, string? database = null, params SqlParameter[] parameters)
     {
-        using var connection = new SqlConnection(config.GetConnectionString(database));
-        connection.Open();
+        try
+        {
+            using var connection = new SqlConnection(config.GetConnectionString(database));
+            connection.Open();
 
-        using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.CommandTimeout = config.ConnectionTimeoutSeconds;
-        command.Parameters.AddRange(parameters);
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = config.ConnectionTimeoutSeconds;
+            command.Parameters.AddRange(parameters);
 
-        using var reader = command.ExecuteReader();
-        return ResultFormatter.Format(reader, config.MaxRows);
+            using var reader = command.ExecuteReader();
+            return ResultFormatter.Format(reader, config.MaxRows);
+        }
+        catch (SqlException ex)
+        {
+            return SqlErrorFormatter.Format(ex);
+        }
     }
 
     public string ExecuteShowPlan(string sql, string? database = null)
     {
-        using var connection = new SqlConnection(config.GetConnectionString(database));
-        connection.Open();
-
-        using (var on = connection.CreateCommand())
-        {
-            on.CommandText = "SET SHOWPLAN_XML ON";
-            on.ExecuteNonQuery();
-        }
-
         try
         {
-            using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            command.CommandTimeout = config.ConnectionTimeoutSeconds;
+            using var connection = new SqlConnection(config.GetConnectionString(database));
+            connection.Open();
 
-            using var reader = command.ExecuteReader();
-            if (!reader.HasRows)
+            using (var on = connection.CreateCommand())
             {
-                return "Plano de execução não retornado.";
+                on.CommandText = "SET SHOWPLAN_XML ON";
+                on.ExecuteNonQuery();
             }
 
-            var parts = new List<string>();
-            var count = 0;
-            while (count < config.MaxRows && reader.Read())
+            try
             {
-                parts.Add(reader.IsDBNull(0) ? string.Empty : reader.GetString(0));
-                count++;
-            }
+                using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                command.CommandTimeout = config.ConnectionTimeoutSeconds;
 
-            if (reader.Read())
+                using var reader = command.ExecuteReader();
+                if (!reader.HasRows)
+                {
+                    return "Plano de execução não retornado.";
+                }
+
+                var parts = new List<string>();
+                var count = 0;
+                while (count < config.MaxRows && reader.Read())
+                {
+                    parts.Add(reader.IsDBNull(0) ? string.Empty : reader.GetString(0));
+                    count++;
+                }
+
+                if (reader.Read())
+                {
+                    parts.Add($"... plano truncado em {config.MaxRows} fragmento(s) ...");
+                }
+
+                return parts.Count > 0
+                    ? string.Join(Environment.NewLine, parts)
+                    : "Plano de execução vazio.";
+            }
+            finally
             {
-                parts.Add($"... plano truncado em {config.MaxRows} fragmento(s) ...");
+                using var off = connection.CreateCommand();
+                off.CommandText = "SET SHOWPLAN_XML OFF";
+                off.ExecuteNonQuery();
             }
-
-            return parts.Count > 0
-                ? string.Join(Environment.NewLine, parts)
-                : "Plano de execução vazio.";
         }
-        finally
+        catch (SqlException ex)
         {
-            using var off = connection.CreateCommand();
-            off.CommandText = "SET SHOWPLAN_XML OFF";
-            off.ExecuteNonQuery();
+            return SqlErrorFormatter.Format(ex);
         }
     }
 
     public string ExecuteWithStatistics(string sql, string? database = null)
     {
-        var messages = new StringBuilder();
-        using var connection = new SqlConnection(config.GetConnectionString(database));
-        connection.InfoMessage += (_, e) =>
-        {
-            if (!string.IsNullOrWhiteSpace(e.Message))
-            {
-                messages.AppendLine(e.Message.Trim());
-            }
-        };
-
-        connection.Open();
-
-        using (var on = connection.CreateCommand())
-        {
-            on.CommandText = "SET STATISTICS IO, TIME ON";
-            on.ExecuteNonQuery();
-        }
-
         try
         {
-            using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            command.CommandTimeout = config.ConnectionTimeoutSeconds;
-
-            using var reader = command.ExecuteReader();
-            do
+            var messages = new StringBuilder();
+            using var connection = new SqlConnection(config.GetConnectionString(database));
+            connection.InfoMessage += (_, e) =>
             {
-                while (reader.Read())
+                if (!string.IsNullOrWhiteSpace(e.Message))
                 {
+                    messages.AppendLine(e.Message.Trim());
                 }
-            } while (reader.NextResult());
-        }
-        finally
-        {
-            using var off = connection.CreateCommand();
-            off.CommandText = "SET STATISTICS IO, TIME OFF";
-            off.ExecuteNonQuery();
-        }
+            };
 
-        return messages.Length > 0
-            ? messages.ToString().TrimEnd()
-            : "Consulta executada, mas STATISTICS IO/TIME não retornou mensagens. Verifique permissões no banco.";
+            connection.Open();
+
+            using (var on = connection.CreateCommand())
+            {
+                on.CommandText = "SET STATISTICS IO, TIME ON";
+                on.ExecuteNonQuery();
+            }
+
+            try
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                command.CommandTimeout = config.ConnectionTimeoutSeconds;
+
+                using var reader = command.ExecuteReader();
+                do
+                {
+                    while (reader.Read())
+                    {
+                    }
+                } while (reader.NextResult());
+            }
+            finally
+            {
+                using var off = connection.CreateCommand();
+                off.CommandText = "SET STATISTICS IO, TIME OFF";
+                off.ExecuteNonQuery();
+            }
+
+            return messages.Length > 0
+                ? messages.ToString().TrimEnd()
+                : "Consulta executada, mas STATISTICS IO/TIME não retornou mensagens. Verifique permissões no banco.";
+        }
+        catch (SqlException ex)
+        {
+            return SqlErrorFormatter.Format(ex);
+        }
     }
 }
 

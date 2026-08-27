@@ -379,9 +379,10 @@ public sealed class SqlTools(McpConfig config, SqlExecutor executor)
         }
         if (!string.IsNullOrWhiteSpace(tabela))
         {
-            sql += " AND t.name = @tabela";
+            sql += " AND t.name = @tabela\n";
             parameters.Add(new SqlParameter("@tabela", tabela));
         }
+
         sql += """
             GROUP BY SCHEMA_NAME(t.schema_id), t.name, i.name, i.type_desc, i.is_unique, i.is_primary_key
             ORDER BY schema_name, tabela, indice
@@ -675,71 +676,78 @@ public sealed class SqlTools(McpConfig config, SqlExecutor executor)
             ORDER BY i.name, ic.is_included_column, ic.key_ordinal, c.name
             """;
 
-        using var connection = new SqlConnection(config.GetConnectionString(
-            string.IsNullOrWhiteSpace(database) ? null : database));
-        connection.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.Parameters.Add(new SqlParameter("@schema", schema));
-        command.Parameters.Add(new SqlParameter("@tabela", tabela));
-
-        var indices = new Dictionary<string, (List<string> Keys, List<string> Includes)>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        try
         {
-            var indexName = reader.GetString(0);
-            var isIncluded = reader.GetBoolean(2);
-            var columnName = reader.GetString(3);
-            if (!indices.TryGetValue(indexName, out var parts))
+            using var connection = new SqlConnection(config.GetConnectionString(
+                string.IsNullOrWhiteSpace(database) ? null : database));
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.Add(new SqlParameter("@schema", schema));
+            command.Parameters.Add(new SqlParameter("@tabela", tabela));
+
+            var indices = new Dictionary<string, (List<string> Keys, List<string> Includes)>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
             {
-                parts = (new List<string>(), new List<string>());
-                indices[indexName] = parts;
+                var indexName = reader.GetString(0);
+                var isIncluded = reader.GetBoolean(2);
+                var columnName = reader.GetString(3);
+                if (!indices.TryGetValue(indexName, out var parts))
+                {
+                    parts = (new List<string>(), new List<string>());
+                    indices[indexName] = parts;
+                }
+
+                if (isIncluded)
+                {
+                    parts.Includes.Add(columnName);
+                }
+                else if (!parts.Keys.Contains(columnName))
+                {
+                    parts.Keys.Add(columnName);
+                }
             }
 
-            if (isIncluded)
+            if (indices.Count == 0)
             {
-                parts.Includes.Add(columnName);
+                return $"Nenhum índice encontrado para [{schema}].[{tabela}].";
             }
-            else if (!parts.Keys.Contains(columnName))
+
+            var output = new StringBuilder();
+            output.AppendLine($"Colunas analisadas: {string.Join(", ", colList)}");
+            output.AppendLine($"Tabela: [{schema}].[{tabela}]");
+            output.AppendLine();
+            output.AppendLine("indice | cobertura | colunas_chave | colunas_include");
+            output.AppendLine(new string('-', 72));
+
+            var best = "NAO";
+            foreach (var (indexName, parts) in indices.OrderBy(entry => entry.Key))
             {
-                parts.Keys.Add(columnName);
+                var coverage = EvaluateCoverage(colList, parts.Keys, parts.Includes);
+                if (coverage.StartsWith("COMPLETA", StringComparison.Ordinal))
+                {
+                    best = "COMPLETA";
+                }
+                else if (coverage.StartsWith("PARCIAL", StringComparison.Ordinal) && best == "NAO")
+                {
+                    best = "PARCIAL";
+                }
+
+                output.AppendLine(
+                    $"{indexName} | {coverage} | " +
+                    $"{(parts.Keys.Count > 0 ? string.Join(", ", parts.Keys) : "-")} | " +
+                    $"{(parts.Includes.Count > 0 ? string.Join(", ", parts.Includes) : "-")}");
             }
+
+            output.AppendLine();
+            output.AppendLine($"Melhor cobertura encontrada: {best}");
+            return output.ToString().TrimEnd();
         }
-
-        if (indices.Count == 0)
+        catch (SqlException ex)
         {
-            return $"Nenhum índice encontrado para [{schema}].[{tabela}].";
+            return SqlErrorFormatter.Format(ex);
         }
-
-        var output = new StringBuilder();
-        output.AppendLine($"Colunas analisadas: {string.Join(", ", colList)}");
-        output.AppendLine($"Tabela: [{schema}].[{tabela}]");
-        output.AppendLine();
-        output.AppendLine("indice | cobertura | colunas_chave | colunas_include");
-        output.AppendLine(new string('-', 72));
-
-        var best = "NAO";
-        foreach (var (indexName, parts) in indices.OrderBy(entry => entry.Key))
-        {
-            var coverage = EvaluateCoverage(colList, parts.Keys, parts.Includes);
-            if (coverage.StartsWith("COMPLETA", StringComparison.Ordinal))
-            {
-                best = "COMPLETA";
-            }
-            else if (coverage.StartsWith("PARCIAL", StringComparison.Ordinal) && best == "NAO")
-            {
-                best = "PARCIAL";
-            }
-
-            output.AppendLine(
-                $"{indexName} | {coverage} | " +
-                $"{(parts.Keys.Count > 0 ? string.Join(", ", parts.Keys) : "-")} | " +
-                $"{(parts.Includes.Count > 0 ? string.Join(", ", parts.Includes) : "-")}");
-        }
-
-        output.AppendLine();
-        output.AppendLine($"Melhor cobertura encontrada: {best}");
-        return output.ToString().TrimEnd();
     }
 
     [McpServerTool, Description("Lista índices redundantes: prefixo duplicado ou chaves idênticas.")]
@@ -833,9 +841,10 @@ public sealed class SqlTools(McpConfig config, SqlExecutor executor)
         var parameters = new List<SqlParameter>();
         if (!string.IsNullOrWhiteSpace(schema))
         {
-            sql += " AND SCHEMA_NAME(t.schema_id) = @schema";
+            sql += " AND SCHEMA_NAME(t.schema_id) = @schema\n";
             parameters.Add(new SqlParameter("@schema", schema));
         }
+
         sql += """
             GROUP BY t.schema_id, t.name, c.name, ty.name
             HAVING SUM(p.rows) >= @minLinhas
